@@ -1,35 +1,31 @@
-import { Context, Hono } from "hono";
+// src/index.ts
+import { Hono } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
-import { Database } from "bun:sqlite";
+import { initDB } from "./db";
+import userApp from "./modules/user/user.routes";
 
-const db = new Database("yaca.sqlite");
+// 1. Start DB
+initDB();
 
 const app = new Hono();
 
-app.get("/health", (c) => {
-  return c.json({ status: true, uptime: process.uptime() });
-});
+// 2. Mount Modules
+// Any route inside userApp will now start with /users
+app.route("/users", userApp);
 
-app.get(
-  "/ws",
-  upgradeWebSocket((c: Context) => {
-    return {
-      onOpen(event, ws) {
-        console.log("Connection Opened");
-        ws.send("Welcome to YACA chat!");
-      },
-      onMessage(event, ws) {
-        console.log("Received: " + event.data);
-        ws.send(`You said ${event.data}`);
-      },
-      onClose(event, ws) {
-        console.log("Connection closed");
-      },
-    };
-  }),
-);
+app.get("/health", (c) => c.json({ status: true, uptime: process.uptime() }));
 
-console.log("YACA BE listening http://localhost:3000");
+// WebSocket Logic (Can also be moved to a module later!)
+app.get("/ws", upgradeWebSocket((c) => {
+  return {
+    onMessage(event, ws) {
+      console.log(`Received: ${event.data}`);
+      ws.send(`Echo: ${event.data}`);
+    },
+  };
+}));
+
+console.log("🚀 YACA Server running on http://localhost:3000");
 
 export default {
   port: 3000,
