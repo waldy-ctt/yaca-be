@@ -20,9 +20,25 @@ export class UserRepository {
   static findByEmail(email: string) {
     // $email is the placeholder
     const query = db.query("SELECT * FROM users WHERE email = $email");
-    
+
     // We bind the value safely here
     return query.get({ $email: email }) as User | null;
+  }
+
+  static findUserByEmailAndPassword(email: string, password: string) {
+    const query = db.query(
+      "SELECT * FROM users WHERE email = $email and password = $password",
+    );
+
+    return query.get({ $email: email, $password: password }) as User | null;
+  }
+
+  static findUserByPhoneAndPassword(phone: string, password: string) {
+    const query = db.query(
+      "SELECT * FROM users WHERE tel = $tel and password = $password",
+    );
+
+    return query.get({ $tel: phone, $password: password }) as User | null;
   }
 
   // 3. Create User (Transaction Example)
@@ -37,7 +53,7 @@ export class UserRepository {
       $id: id,
       $email: email,
       $username: username,
-      $now: new Date().toISOString()
+      $now: new Date().toISOString(),
     });
   }
 }
