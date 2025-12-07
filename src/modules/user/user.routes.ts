@@ -1,15 +1,19 @@
 // src/modules/user/user.routes.ts
-import { Hono } from "hono";
+import { Context, Hono } from "hono";
 import { UserRepository } from "./user.repo";
 
 const userApp = new Hono();
 
-userApp.get("/", (c) => {
+userApp.get("/", (c: Context) => {
   const users = UserRepository.findAll();
   return c.json(users);
 });
 
-userApp.get("/:email", (c) => {
+userApp.post("/login", (c: Context) => {
+
+}) 
+
+userApp.get("/:email", (c: Context) => {
   const email = c.req.param("email");
   const user = UserRepository.findByEmail(email);
   
