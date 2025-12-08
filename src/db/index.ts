@@ -4,7 +4,6 @@ import { Database } from "bun:sqlite";
 // Singleton: Create the connection once
 export const db = new Database("yaca.sqlite");
 
-// We can keep your init logic here or in a migration script
 export function initDB() {
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
@@ -18,5 +17,20 @@ export function initDB() {
       updatedAt DATETIME NOT NULL
     );
   `);
+
+  db.run(
+    `
+    CREATE TABLE IF NOT EXISTS conversation_list (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,           
+      lastMessage TEXT,
+      isRead BOOLEAN DEFAULT 0,
+      isPinned BOOLEAN DEFAULT 0,
+      latestTimestamp DATETIME,
+      opponentAvatar TEXT,          
+      participantIdList TEXT       
+    );
+    `,
+  );
   console.log("✅ Database initialized");
 }

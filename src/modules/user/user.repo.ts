@@ -1,59 +1,37 @@
 // src/modules/user/user.repo.ts
 import { db } from "../../db";
-
-export interface User {
-  id: string;
-  username: string;
-  email: string;
-  // ... add other fields as needed
-}
+import { UserInterface } from "./user.interface";
 
 export class UserRepository {
-  // 1. Fetch all users
   static findAll() {
-    // "prepare" compiles the SQL logic efficiently
-    const query = db.query("SELECT * FROM users");
-    return query.all();
+    const query = db.query("SELECT id, username, email, name FROM users"); // Don't return passwords!
+    return query.all() as UserInterface[] | [];
   }
 
-  // 2. Find by Email (The Safe Way)
-  static findByEmail(email: string) {
-    // $email is the placeholder
-    const query = db.query("SELECT * FROM users WHERE email = $email");
-
-    // We bind the value safely here
-    return query.get({ $email: email }) as User | null;
-  }
-
-  static findUserByEmailAndPassword(email: string, password: string) {
+  // Find by Email OR Username (Flexible Login)
+  static findByIdentifier(identifier: string) {
     const query = db.query(
-      "SELECT * FROM users WHERE email = $email and password = $password",
+      "SELECT * FROM users WHERE email = $id OR username = $id"
     );
-
-    return query.get({ $email: email, $password: password }) as User | null;
+    return query.get({ $id: identifier }) as UserInterface | null;
   }
 
-  static findUserByPhoneAndPassword(phone: string, password: string) {
-    const query = db.query(
-      "SELECT * FROM users WHERE tel = $tel and password = $password",
-    );
-
-    return query.get({ $tel: phone, $password: password }) as User | null;
-  }
-
-  // 3. Create User (Transaction Example)
-  static create(id: string, email: string, username: string) {
+  // Keep your create method, it's good!
+  static create(user: UserInterface) {
     const query = db.query(`
       INSERT INTO users (id, email, username, tel, name, password, createdAt, updatedAt)
-      VALUES ($id, $email, $username, '000', 'No Name', 'pass', $now, $now)
+      VALUES ($id, $email, $username, $tel, $name, $pass, $now, $now)
       RETURNING *
     `);
 
     return query.get({
-      $id: id,
-      $email: email,
-      $username: username,
+      $id: user.id,
+      $email: user.email,
+      $username: user.username,
+      $tel: user.tel,
+      $name: user.name,
+      $pass: user.password,
       $now: new Date().toISOString(),
-    });
+    }) as UserInterface | null;
   }
 }
