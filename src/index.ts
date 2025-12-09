@@ -5,6 +5,7 @@ import { verify } from "hono/jwt";
 import { initDB } from "./db";
 import userApp, { JWT_SECRET } from "./modules/user/user.routes";
 import { WSContext } from "hono/ws";
+import { cors } from "hono/cors";
 
 initDB();
 
@@ -13,6 +14,15 @@ const app = new Hono<{ Variables: { userId: string } }>();
 
 // Global map: userId → WebSocket Context
 const clients = new Map<string, WSContext>();
+
+app.use(
+  "/*",
+  cors({
+    origin: "*", // Allow all origins (localhost:5173, etc.)
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 
 app.route("/users", userApp);
 app.get("/health", (c) => c.json({ status: true, uptime: process.uptime() }));
@@ -25,17 +35,17 @@ app.get(
     const token = c.req.param("token");
     try {
       const payload = await verify(token, JWT_SECRET);
-      
+
       // Store ID in context for the next step
       c.set("userId", payload.id as string);
-      
+
       await next(); // Pass the baton to upgradeWebSocket
     } catch (e) {
       console.error("❌ Invalid Token attempt");
       return c.json({ error: "Unauthorized" }, 401);
     }
   },
-  
+
   // 🟢 STEP 2: The Upgrader
   // This ONLY runs if next() was called above
   upgradeWebSocket((c) => {
@@ -85,7 +95,7 @@ app.get(
         clients.delete(userId);
       },
     };
-  })
+  }),
 );
 
 // --- Helpers ---
