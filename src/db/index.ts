@@ -18,19 +18,31 @@ export function initDB() {
     );
   `);
 
-  db.run(
-    `
-    CREATE TABLE IF NOT EXISTS conversation_list (
+  db.run(`
+    CREATE TABLE IF NOT EXISTS conversation (
       id TEXT PRIMARY KEY,
+      participants TEXT,
+      avatar TEXT,
       name TEXT NOT NULL,           
       lastMessage TEXT,
-      isRead BOOLEAN DEFAULT 0,
-      isPinned BOOLEAN DEFAULT 0,
-      latestTimestamp DATETIME,
-      opponentAvatar TEXT,          
-      participantIdList TEXT       
+      lastMessageTimestamp DATETIME,
+      pinnedBy TEXT,
+      updatedAt DATETIME NOT NULL,
+      createdAt DATETIME NOT NULL
     );
-    `,
-  );
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS message (
+      id TEXT PRIMARY KEY,
+      conversationId TEXT NOT NULL,
+      content TEXT NOTE NULL,
+      reaction TEXT,
+      senderId TEXT NOT NULL,           
+      updatedAt DATETIME NOT NULL,
+      createdAt DATETIME NOT NULL
+    );
+  `);
+
   console.log("✅ Database initialized");
 }

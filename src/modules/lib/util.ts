@@ -51,3 +51,35 @@ const isPhoneNoPrefix = (input: string): boolean => {
   const firstChar = input.charAt(0);
   return /[1-9]/.test(firstChar) && isValidPhoneFormat(input);
 };
+
+/**
+ * Joins a list of names and truncates them if they get too long.
+ * @param names Array of strings (e.g. ["Hậu", "Hiếu", "Linh"])
+ * @param maxLength The character limit before cutting (Default: 30)
+ */
+export const formatParticipantNames = (names: string[], maxLength: number = 30): string => {
+  // 1. Join them nicely
+  const joined = names.join(", ");
+
+  // 2. Check if it fits
+  if (joined.length <= maxLength) {
+    return joined;
+  }
+
+  // 3. Truncate and add ellipsis
+  // We subtract 3 so the final string (including "...") fits exactly within maxLength
+  return joined.slice(0, maxLength - 3) + "...";
+}
+
+// --- usage examples ---
+
+const group = ["Hậu", "Hiếu", "Linh"];
+
+// Case 1: Fits perfectly
+console.log(formatParticipantNames(group)); 
+// Output: "Hậu, Hiếu, Linh"
+
+// Case 2: Too long (Simulating a small screen or many names)
+const bigGroup = ["Hậu", "Hiếu", "Linh", "Kevin", "Michael", "Sarah"];
+console.log(formatParticipantNames(bigGroup, 20)); 
+// Output: "Hậu, Hiếu, Linh, ..."

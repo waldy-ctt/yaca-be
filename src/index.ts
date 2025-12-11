@@ -134,7 +134,9 @@ function forwardSignal(fromId: string, toId: string, type: string) {
   }
 }
 
-console.log("YACA Server running on http://localhost:3000");
+console.log("YACA Server running on http://localhost:3000/api");
+
+app.route("/api", app);
 
 export default {
   port: 3000,
