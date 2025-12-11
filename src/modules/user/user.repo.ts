@@ -11,7 +11,7 @@ export class UserRepository {
   // Find by Email OR Username (Flexible Login)
   static findByIdentifier(identifier: string) {
     const query = db.query(
-      "SELECT * FROM users WHERE email = $id OR username = $id"
+      "SELECT * FROM users WHERE email = $id OR username = $id",
     );
     return query.get({ $id: identifier }) as UserInterface | null;
   }
@@ -33,5 +33,29 @@ export class UserRepository {
       $pass: user.password,
       $now: new Date().toISOString(),
     }) as UserInterface | null;
+  }
+
+  static findProfileById(id: string) {
+    const query = db.query(`
+      SELECT id, username, name, avatar, status, lastSeen 
+      FROM users WHERE id = $id
+    `);
+    return query.get({ $id: id }) as any;
+  }
+
+  static updateStatus(id: string, status: "online" | "offline") {
+    const now = new Date().toISOString();
+    db.run(
+      `
+      UPDATE users 
+      SET status = $status, lastSeen = $now, updatedAt = $now 
+      WHERE id = $id
+    `,
+      {
+        $id: id,
+        $status: status,
+        $now: now,
+      } as any,
+    );
   }
 }

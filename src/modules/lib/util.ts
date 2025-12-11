@@ -70,16 +70,3 @@ export const formatParticipantNames = (names: string[], maxLength: number = 30):
   // We subtract 3 so the final string (including "...") fits exactly within maxLength
   return joined.slice(0, maxLength - 3) + "...";
 }
-
-// --- usage examples ---
-
-const group = ["Hậu", "Hiếu", "Linh"];
-
-// Case 1: Fits perfectly
-console.log(formatParticipantNames(group)); 
-// Output: "Hậu, Hiếu, Linh"
-
-// Case 2: Too long (Simulating a small screen or many names)
-const bigGroup = ["Hậu", "Hiếu", "Linh", "Kevin", "Michael", "Sarah"];
-console.log(formatParticipantNames(bigGroup, 20)); 
-// Output: "Hậu, Hiếu, Linh, ..."

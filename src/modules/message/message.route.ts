@@ -1,28 +1,25 @@
 import { Context, Hono } from "hono";
 import { MessageRepository } from "./message.repo";
-import { MessageContentInterface, MessageInterface } from "./message.interface";
-import { randomUUIDv7 } from "bun";
 
 const messageApp = new Hono();
 
-// Get all message  TODO: make this paging or somewhat for performance wise
-messageApp.get('/', async (c: Context) => {
-  const messages = MessageRepository.findAll();
-  return c.json(messages);
-})
+messageApp.get("/:conversationId", async (c: Context) => {
+  const conversationId = c.req.param("conversationId");
+  const limit = Number(c.req.query("limit")) || 50;
+  const cursor = c.req.query("cursor");
 
-messageApp.post('/conversation/:conversationId', async (c: Context) => {
-  const conversationId: string = c.req.param('conversationId');
-  const { senderId, content } = await c.req.json();
-  
-  const result = MessageRepository.create(
-    new MessageInterface(
-      randomUUIDv7(),
-      conversationId,
-      MessageContentInterface.fromJsonString(content),
-      senderId,
-      new Date().toISOString(),
-      new Date().toISOString()
-    )
-  )
-})
+  const messages = MessageRepository.findByConversationId(
+    conversationId,
+    limit,
+    cursor
+  );
+
+  return c.json({
+    data: messages,
+    nextCursor: messages.length > 0 
+      ? messages[messages.length - 1].createdAt 
+      : null,
+  });
+});
+
+export default messageApp;
