@@ -13,14 +13,20 @@ import { JWT_SECRET } from "../user/user.routes";
 import { UserRepository } from "../user/user.repo";
 import { forwardToUser } from "../../ws/ws.handler";
 
-const converstationApp = new Hono();
+const conversationApp = new Hono();
 
-converstationApp.get("/", async (c: Context) => {
+conversationApp.get("/", async (c: Context) => {
   const users = ConversationRepository.findAll();
   return c.json(users);
 });
 
-converstationApp.get("/users/", async (c: Context) => {
+conversationApp.get("/:conversationId", async (c: Context) => {
+  const conversationId = c.req.param("conversationId");
+  const result = ConversationRepository.findById(conversationId);
+  return c.json(result);
+});
+
+conversationApp.get("/users/", async (c: Context) => {
   const userId = c.req.param("userId");
   const token = c.req.header("Authorization");
   let currentUserId: string;
@@ -37,8 +43,9 @@ converstationApp.get("/users/", async (c: Context) => {
   }
 });
 
-converstationApp.post("/", async (c: Context) => {
-  const { initMessage, senderId, participants, name, avatar } = await c.req.json();
+conversationApp.post("/", async (c: Context) => {
+  const { initMessage, senderId, participants, name, avatar } =
+    await c.req.json();
 
   const conversationId: string = randomUUIDv7();
 
@@ -63,7 +70,7 @@ converstationApp.post("/", async (c: Context) => {
   );
 
   const savedConv = ConversationRepository.create(newConversation);
-  
+
   // 3. Save the Initial Message (DB) - Don't forget this!
   // Your previous code missed saving the actual message to the message table!
   // (Assuming you have MessageRepository available, or add logic here)
@@ -72,14 +79,14 @@ converstationApp.post("/", async (c: Context) => {
   // -----------------------------------------------------
   // 🚀 REAL-TIME MAGIC: Notify Recipients
   // -----------------------------------------------------
-  
+
   // Prepare the WS Payload
   // We send a "NEW_CONVERSATION" event so the frontend knows to add it to the top of the list
   const wsPayload = {
     type: "NEW_CONVERSATION",
     conversation: savedConv,
     // Optional: Include the hydration (sender profile) if your UI needs it
-    sender: UserRepository.findProfileById(senderId)
+    sender: UserRepository.findProfileById(senderId),
   };
 
   // Loop through participants and notify everyone (except sender)
@@ -92,4 +99,4 @@ converstationApp.post("/", async (c: Context) => {
   return c.json(savedConv);
 });
 
-export default converstationApp;
+export default conversationApp;

@@ -131,4 +131,41 @@ userApp.post("/signup", async (c: Context) => {
   }
 });
 
+userApp.put("/me", async (c: Context) => {
+  // 1. Auth Check: Get User ID from Token
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
+
+  const token = authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : authHeader;
+  let userId: string;
+
+  try {
+    const payload = await verify(token, JWT_SECRET);
+    userId = payload.id as string;
+  } catch (e) {
+    return c.json({ error: "Invalid Token" }, 401);
+  }
+
+  // 2. Parse Body
+  const body = await c.req.json();
+
+  // 3. Prepare Update Object
+  // We explicitly pick fields to prevent users from updating sensitive things (like 'id' or 'password')
+  const updatePayload: any = {};
+  if (body.status !== undefined) updatePayload.status = body.status;
+  if (body.name !== undefined) updatePayload.name = body.name;
+  if (body.username !== undefined) updatePayload.username = body.username;
+  if (body.tel !== undefined) updatePayload.tel = body.tel;
+
+  // 4. Perform Update
+  try {
+    const updatedUser = UserRepository.update(userId, updatePayload);
+    return c.json(updatedUser);
+  } catch (e) {
+    console.error("Update failed:", e);
+    // Usually fails if username is taken (UNIQUE constraint)
+    return c.json({ error: "Update failed. Username might be taken." }, 409);
+  }
+});
+
 export default userApp;

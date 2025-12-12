@@ -4,14 +4,15 @@ import { removeAccents } from "../lib/util";
 import { UserInterface } from "./user.interface";
 
 export class UserRepository {
-static findAll(
+  static findAll(
     limit: number = 20,
     cursor?: string,
     keyword?: string,
     withCurrentUser: boolean = false, // Default: Hide myself
-    currentUserId?: string            // Required if you want to hide yourself
+    currentUserId?: string, // Required if you want to hide yourself
   ) {
-    let sql = "SELECT id, username, email, name, avatar, status, createdAt FROM users";
+    let sql =
+      "SELECT id, username, email, name, avatar, status, createdAt FROM users";
     const params: any = { $limit: limit };
     const conditions: string[] = [];
 
@@ -104,5 +105,56 @@ static findAll(
         $now: now,
       } as any,
     );
+  }
+
+  static update(id: string, updates: Partial<UserInterface>) {
+    // 1. Fetch current data first
+    // We need this to rebuild the 'search_vector' correctly.
+    // e.g. If they only update 'name', we still need their 'email' to build the vector.
+    const currentUser = db
+      .query("SELECT * FROM users WHERE id = $id")
+      .get({ $id: id }) as UserInterface;
+
+    if (!currentUser) return null;
+
+    // 2. Merge old data with new updates
+    const merged = { ...currentUser, ...updates };
+
+    // 3. Re-calculate Search Vector 🧠
+    // Even if they didn't change their name, re-running this is safer and cheap.
+    const rawData = `${merged.name} ${merged.username} ${merged.email}`;
+    const newSearchVector = removeAccents(rawData);
+
+    // 4. Build Dynamic SQL
+    // We update fields + updatedAt + search_vector
+    const query = db.query(`
+      UPDATE users
+      SET 
+        name = $name,
+        username = $username,
+        tel = $tel,
+        status = $status,
+        search_vector = $vector,
+        updatedAt = $now
+      WHERE id = $id
+      RETURNING *
+    `);
+
+    const updatedRow = query.get({
+      $id: id,
+      $name: merged.name,
+      $username: merged.username,
+      $tel: merged.tel,
+      $status: merged.status,
+      $vector: newSearchVector, // <--- Key Update!
+      $now: new Date().toISOString(),
+    }) as any;
+
+    // 5. Return safe data (remove password)
+    if (updatedRow) {
+      const { password: _, search_vector: __, ...safeUser } = updatedRow;
+      return safeUser;
+    }
+    return null;
   }
 }

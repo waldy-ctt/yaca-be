@@ -17,7 +17,7 @@ app.use("/*", cors({ origin: "*" }));
 // API Routes
 app.route("/users", userApp);
 app.route('/conversation', converstationApp)
-app.route("/messages", messageApp); // History handling
+app.route("/messages", messageApp); 
 
 // WebSocket Route (Clean 1-liner!)
 app.get("/ws/:token", wsHandler);
