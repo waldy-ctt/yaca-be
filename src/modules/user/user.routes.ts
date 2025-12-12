@@ -1,15 +1,57 @@
 // src/modules/user/user.routes.ts
 import { Context, Hono } from "hono";
 import { UserRepository } from "./user.repo";
-import { sign } from "hono/jwt";
+import { sign, verify } from "hono/jwt";
 import { randomUUIDv7 } from "bun";
 
 const userApp = new Hono();
 export const JWT_SECRET = "CHANGE_ME_TO_SOMETHING_SAFE"; // Move to .env later
 
-userApp.get("/", (c: Context) => {
-  const users = UserRepository.findAll();
-  return c.json(users);
+userApp.get("/", async (c: Context) => {
+  // 1. Parse Query Params
+  const limit = Number(c.req.query("limit")) || 20;
+  const cursor = c.req.query("cursor");
+  const keyword = c.req.query("keyword");
+
+  // Fix boolean parsing: Check if string is explicitly "true"
+  const withCurrentUser = c.req.query("withCurrentUser") === "true";
+
+  let currentUserId: string | undefined;
+
+  // 2. Extract Token (Handle "Bearer <token>")
+  const authHeader = c.req.header("Authorization");
+
+  if (authHeader) {
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : authHeader;
+
+    try {
+      const payload = await verify(token, JWT_SECRET);
+      currentUserId = payload.id as string;
+    } catch (e) {
+      console.log("Token verification failed:", e);
+      // Optional: Return 401 here if auth is strictly required
+    }
+  }
+
+  // 3. Call Repo
+  // Logic: If we want to hide the current user (!withCurrentUser), we MUST pass the ID to exclude
+  const users = UserRepository.findAll(
+    limit,
+    cursor,
+    keyword,
+    withCurrentUser,
+    currentUserId, // Pass it regardless; repo handles the logic
+  );
+
+  const nextCursor =
+    users.length > 0 ? users[users.length - 1].createdAt : null;
+
+  return c.json({
+    data: users,
+    nextCursor,
+  });
 });
 
 // 🔵 LOGIN
@@ -71,6 +113,7 @@ userApp.post("/signup", async (c: Context) => {
       name,
       password: hashedPassword,
       email,
+      status: "online",
       tel,
       username,
     });

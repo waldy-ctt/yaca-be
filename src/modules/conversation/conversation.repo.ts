@@ -3,7 +3,7 @@ import { ConversationInterface } from "./conversation.interface";
 export class ConversationRepository {
   // 1. Find All
   static findAll(limit: number = 20, cursor?: string) {
-    let sql = "SELECT * FROM conversations";
+    let sql = "SELECT * FROM conversation";
     const params: any = { $limit: limit };
 
     if (cursor) {
@@ -17,6 +17,36 @@ export class ConversationRepository {
     const rows = query.all(params) as any[];
 
     return rows.map((row) => this.mapRowToModel(row));
+  }
+
+  static findConversationByParticipants(targetIds: string[]) {
+    if (targetIds.length === 0) return null;
+
+    // 1. Optimization: Only fetch rows that contain the first user.
+    // This drastically reduces the number of rows we have to loop through in JS.
+    const firstUserId = targetIds[0];
+
+    // Note: We wrap the ID in quotes to ensure we match the JSON string element
+    const query = db.query(
+      "SELECT * FROM conversation WHERE participant LIKE $pattern",
+    );
+    const candidates = query.all({ $pattern: `%"${firstUserId}"%` }) as any[];
+
+    // 2. Hydrate candidates to models
+    const conversations = candidates.map((row) => this.mapRowToModel(row));
+
+    // 3. Strict Filter in JavaScript
+    // We look for a conversation where:
+    // A. The number of participants is the same
+    // B. Every target ID exists in the conversation
+    return (
+      conversations.find((conv) => {
+        if (conv.participants.length !== targetIds.length) return false;
+
+        const convSet = new Set(conv.participants);
+        return targetIds.every((id) => convSet.has(id));
+      }) || null
+    );
   }
 
   // 2. Find One

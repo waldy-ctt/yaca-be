@@ -19,16 +19,13 @@ export const wsHandler = async (c: Context, next: Next) => {
   const token = c.req.param("token");
   let userId: string;
 
-  // 1. Auth Check (The Gatekeeper)
   try {
     const payload = await verify(token, JWT_SECRET);
     userId = payload.id as string;
   } catch (e) {
-    // ✅ Safe 401 response (No WebSocket upgrade happens)
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  // 2. If Auth passes, we delegate to the actual WebSocket upgrader
   return upgradeWebSocket((c) => {
     return {
       onOpen(event, ws) {
@@ -38,7 +35,6 @@ export const wsHandler = async (c: Context, next: Next) => {
       },
 
       async onMessage(event, ws) {
-        // 🟢 FIX 2: Strict Type Narrowing for TextDecoder
         let raw: string;
 
         if (typeof event.data === "string") {
@@ -47,10 +43,8 @@ export const wsHandler = async (c: Context, next: Next) => {
           event.data instanceof ArrayBuffer ||
           ArrayBuffer.isView(event.data)
         ) {
-          // TypeScript now knows this is definitely a Buffer
           raw = new TextDecoder().decode(event.data);
         } else {
-          // It's a Blob or something else we don't handle
           return;
         }
 
@@ -89,7 +83,7 @@ export const wsHandler = async (c: Context, next: Next) => {
         UserRepository.updateStatus(userId, "offline");
       },
     };
-  })(c, next); // <--- We call the upgrader manually here
+  })(c, next);
 };
 
 // --- HELPER FUNCTIONS ---
@@ -97,7 +91,6 @@ export const wsHandler = async (c: Context, next: Next) => {
 async function handleSendMessage(senderId: string, payload: any, ws: any) {
   const { conversationId, content, toUserId, tempId } = payload;
 
-  // A. Save Message
   const newMessage = new MessageInterface(
     randomUUIDv7(),
     conversationId,
@@ -108,23 +101,18 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
   const savedMsg = MessageRepository.create(newMessage);
   if (!savedMsg) return;
 
-  // B. Fetch Sender Profile (The Hydration) 💧
   const senderProfile = UserRepository.findProfileById(senderId);
 
-  // C. Construct "Hydrated" Payload
-  // We attach the sender object so the UI can render the avatar immediately
   const eventPayload = {
     type: "NEW_MESSAGE",
     message: {
-      ...savedMsg, // The raw message data
-      sender: senderProfile, // { id, name, avatar, status }
+      ...savedMsg,
+      sender: senderProfile,
     },
   };
 
-  // D. Send
   forwardToUser(toUserId, eventPayload);
 
-  // Confirm to self (also hydrated, useful for optimistic UI confirmation)
   ws.send(
     JSON.stringify({
       type: "ACK",
@@ -178,7 +166,7 @@ async function handleDeleteMessage(senderId: string, payload: any) {
   }
 }
 
-function forwardToUser(userId: string, data: any) {
+export function forwardToUser(userId: string, data: any) {
   const socket = clients.get(userId);
   if (socket) {
     socket.send(JSON.stringify(data));

@@ -70,3 +70,12 @@ export const formatParticipantNames = (names: string[], maxLength: number = 30):
   // We subtract 3 so the final string (including "...") fits exactly within maxLength
   return joined.slice(0, maxLength - 3) + "...";
 }
+
+export const removeAccents = (str: string): string => {
+  if (!str) return "";
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remove combining diacritics
+    .replace(/đ/g, "d").replace(/Đ/g, "D") // Handle specific Vietnamese chars
+    .toLowerCase();
+};

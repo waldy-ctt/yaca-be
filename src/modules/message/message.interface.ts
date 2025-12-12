@@ -24,8 +24,6 @@ export class MessageInterface {
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
-
-
 }
 
 export class MessageContentInterface {
@@ -82,16 +80,16 @@ export class MessageReactionInterface {
   // ✅ NEW: JSON String -> Array of Objects (For Reading from SQLite)
   static arrayFromJsonString(json: string): MessageReactionInterface[] {
     if (!json) return []; // Safety: Handle empty DB columns
-    
+
     try {
       const parsed = JSON.parse(json);
-      
+
       // Safety: Make sure it's actually an array
       if (!Array.isArray(parsed)) return [];
 
       // Rehydrate: Turn plain JSON objects back into Class Instances
-      return parsed.map((item: any) => 
-        new MessageReactionInterface(item.type, item.sender)
+      return parsed.map(
+        (item: any) => new MessageReactionInterface(item.type, item.sender),
       );
     } catch (e) {
       console.error("Failed to parse reactions:", e);
