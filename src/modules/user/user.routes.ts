@@ -32,7 +32,6 @@ userApp.get("/", async (c: Context) => {
     } catch (e) {
       console.log("Token verification failed:", e);
       return c.json({ error: "Unauthorized" }, 401);
-      // Optional: Return 401 here if auth is strictly required
     }
   }
 
@@ -169,6 +168,13 @@ userApp.put("/me", async (c: Context) => {
     // Usually fails if username is taken (UNIQUE constraint)
     return c.json({ error: "Update failed. Username might be taken." }, 409);
   }
+});
+
+userApp.get("/:userId", async (c: Context) => {
+  const userId = c.req.param("userId");
+
+  const result = UserRepository.findUserByUserId(userId);
+  return c.json(result);
 });
 
 export default userApp;

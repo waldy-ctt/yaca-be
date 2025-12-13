@@ -4,6 +4,15 @@ import { removeAccents } from "../../lib/util";
 import { UserInterface } from "./user.interface";
 
 export class UserRepository {
+  static findUserByUserId(userId: string) {
+    const query = db.query(
+      "SELECT * FROM users WHERE id = $id"
+    )
+    return query.get({
+      $id: userId
+    }) as UserInterface | null;
+  }
+
   static findNamesByUserIds(userIds: string[]) {
     if (userIds.length === 0) return [];
 

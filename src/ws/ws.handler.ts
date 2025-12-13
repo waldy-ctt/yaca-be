@@ -29,9 +29,11 @@ export const wsHandler = async (c: Context, next: Next) => {
 
   return upgradeWebSocket((c) => {
     return {
+      // NOTE: On ws connection Open
       onOpen(event, ws) {
         clients.set(userId, ws);
         UserRepository.updateStatus(userId, "online");
+        console.log("User " + userId + " Joined");
       },
 
       async onMessage(event, ws) {
@@ -50,7 +52,7 @@ export const wsHandler = async (c: Context, next: Next) => {
 
         try {
           const data = JSON.parse(raw);
-
+          console.log("WS Data: ", data);
           switch (data.type) {
             case "SEND_MESSAGE":
               await handleSendMessage(userId, data, ws);
@@ -99,40 +101,43 @@ export const wsHandler = async (c: Context, next: Next) => {
 // --- HELPER FUNCTIONS ---
 
 async function handleSendMessage(senderId: string, payload: any, ws: any) {
-  const { conversationId, content, tempId } = payload; // toUserId no longer needed
+  const { destinationId, content, destinationType, tempId } = payload; // toUserId no longer needed
 
-  const newMessage = new MessageInterface(
-    randomUUIDv7(),
-    conversationId,
-    new MessageContentInterface(content, "text"),
-    [],
-    senderId,
-  );
+  if (destinationType === "conversation") {
+    const newMessage = new MessageInterface(
+      randomUUIDv7(),
+      destinationId,
+      new MessageContentInterface(content.data, content.type),
+      [],
+      senderId,
+    );
 
-  const savedMsg = MessageRepository.create(newMessage);
-  if (!savedMsg) return;
+    const savedMsg = MessageRepository.create(newMessage);
+    if (!savedMsg) return;
 
-  const senderProfile = UserRepository.findProfileById(senderId);
+    const senderProfile = UserRepository.findProfileById(senderId);
 
-  const eventPayload = {
-    type: "NEW_MESSAGE",
-    message: {
-      ...savedMsg,
-      sender: senderProfile,
-    },
-  };
+    const eventPayload = {
+      type: "NEW_MESSAGE",
+      message: {
+        ...savedMsg,
+        sender: senderProfile,
+      },
+    };
 
-  // Broadcast to ALL participants except sender
-  forwardToConversation(conversationId, eventPayload, senderId);
+    // Broadcast to ALL participants except sender
+    forwardToConversation(destinationId, eventPayload, senderId);
 
-  // Send ACK to sender for optimistic UI
-  ws.send(
-    JSON.stringify({
-      type: "ACK",
-      tempId,
-      message: eventPayload.message,
-    }),
-  );
+    // Send ACK to sender for optimistic UI
+    ws.send(
+      JSON.stringify({
+        type: "ACK",
+        fromConversationId: destinationId,
+        message: savedMsg,
+        tempId: tempId,
+      }),
+    );
+  }
 }
 
 async function handleEditMessage(senderId: string, payload: any) {

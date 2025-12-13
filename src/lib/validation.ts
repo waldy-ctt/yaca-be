@@ -26,7 +26,7 @@ export function validateSignup(body: any) {
 export function validateCreateConversation(body: any) {
   const errors: string[] = [];
 
-  if (!Array.isArray(body.participantIds) || body.participantIds.length === 0) {
+  if (!Array.isArray(body.participants) || body.participants.length === 0) {
     errors.push("participantIds must be non-empty array");
   }
 

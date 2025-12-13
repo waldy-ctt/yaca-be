@@ -8,6 +8,7 @@ import { formatParticipantNames } from "../../lib/util";
 import { forwardToUser } from "../../ws/ws.handler";
 import { authMiddleware } from "../../middleware/auth"; // ← we'll create this next
 import { validateCreateConversation } from "../../lib/validation";
+import { ConversationInterface } from "./conversation.interface";
 
 const conversationApp = new Hono();
 
@@ -15,10 +16,10 @@ const conversationApp = new Hono();
 conversationApp.use("*", authMiddleware);
 
 // GET all conversations (for debugging — remove or protect later)
-conversationApp.get("/", (c) => {
-  const conversations = ConversationRepository.findAll();
-  return c.json(conversations);
-});
+// conversationApp.get("/", (c) => {
+//   const conversations = ConversationRepository.findAll();
+//   return c.json(conversations);
+// });
 
 // GET single conversation
 conversationApp.get("/:conversationId", (c) => {
@@ -67,33 +68,36 @@ conversationApp.post("/", async (c) => {
     return c.json({ error: "Invalid input", details: validation.errors }, 400);
   }
 
-  const { participantIds } = validation.data;
+  const { participants } = validation.data;
 
   // Security: current user must be in participants
-  if (!participantIds.includes(currentUserId)) {
+  if (!participants.includes(currentUserId)) {
     return c.json({ error: "You must be a participant" }, 400);
   }
 
   // Idempotent: return existing if already exists
-  const existing = ConversationRepository.findConversationByParticipants(participantIds);
+  const existing =
+    ConversationRepository.findConversationByParticipants(participants);
   if (existing) {
     return c.json(existing);
   }
 
   // Generate name from participant names
-  const names = UserRepository.findNamesByUserIds(participantIds).map((u) => u.name);
+  const names = UserRepository.findNamesByUserIds(participants).map(
+    (u) => u.name,
+  );
   const name = body.name || formatParticipantNames(names);
 
   const convId = randomUUIDv7();
 
   const newConv = new ConversationInterface(
     convId,
-    participantIds,
+    participants,
     body.avatar ?? null,
     name,
     "", // no last message yet
     new Date().toISOString(),
-    []
+    [],
   );
 
   const saved = ConversationRepository.create(newConv);
@@ -104,7 +108,7 @@ conversationApp.post("/", async (c) => {
     conversation: saved,
   };
 
-  participantIds.forEach((pid) => {
+  participants.forEach((pid) => {
     if (pid !== currentUserId) {
       forwardToUser(pid, payload);
     }
