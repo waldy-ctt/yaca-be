@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { removeAccents } from "../modules/lib/util";
 
 // Singleton: Create the connection once
-export const db = new Database("yaca.sqlite");
+export const db = new Database("data/yaca.sqlite");
 
 export function initDB() {
   db.run(`
