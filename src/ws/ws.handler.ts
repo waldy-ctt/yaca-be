@@ -34,7 +34,7 @@ export const wsHandler = async (c: Context, next: Next) => {
         UserRepository.updateStatus(userId, "online");
         console.log(`✅ User ${userId} connected (online)`);
         console.log(`📊 Total connected clients: ${clients.size}`);
-        
+
         // ✅ Broadcast immediately - no delay needed since we already added to map
         broadcastStatusChange(userId, "online");
       },
@@ -56,7 +56,7 @@ export const wsHandler = async (c: Context, next: Next) => {
         try {
           const data = JSON.parse(raw);
           console.log("📨 WS Data:", data);
-          
+
           switch (data.type) {
             case "SEND_MESSAGE":
               await handleSendMessage(userId, data, ws);
@@ -71,8 +71,9 @@ export const wsHandler = async (c: Context, next: Next) => {
               await handleDeleteMessage(userId, data);
               break;
             case "TYPING":
-              // ✅ FIXED: Broadcast typing to all participants in conversation
-              console.log(`⌨️ User ${userId} typing in conversation ${data.conversationId}`);
+              console.log(
+                `⌨️ User ${userId} typing in conversation ${data.conversationId}`,
+              );
               forwardToConversation(
                 data.conversationId,
                 {
@@ -80,20 +81,37 @@ export const wsHandler = async (c: Context, next: Next) => {
                   conversationId: data.conversationId,
                   from: userId,
                 },
-                userId // Exclude the sender
+                userId,
               );
               break;
             case "READ":
+              // ✅ Broadcast READ event to all participants
               const { conversationId } = data;
-              forwardToConversation(
-                conversationId,
-                {
+              console.log(
+                `📖 [WS] User ${userId} marking conversation ${conversationId} as read`,
+              );
+
+              const conv = ConversationRepository.findById(conversationId);
+              if (!conv) {
+                console.log(`   ❌ Conversation ${conversationId} not found`);
+                break;
+              }
+
+              console.log(
+                `   📡 Broadcasting READ to ${conv.participants.length} participants`,
+              );
+
+              // ✅ Send READ confirmation back to sender AND all others
+              conv.participants.forEach((pid) => {
+                console.log(`      → Sending to participant ${pid}`);
+                forwardToUser(pid, {
                   type: "READ",
                   conversationId,
                   readerId: userId,
-                },
-                userId,
-              );
+                });
+              });
+
+              console.log(`   ✅ READ event broadcast complete`);
               break;
           }
         } catch (e) {
@@ -105,7 +123,7 @@ export const wsHandler = async (c: Context, next: Next) => {
         clients.delete(userId);
         UserRepository.updateStatus(userId, "offline");
         console.log(`❌ User ${userId} disconnected (offline)`);
-        
+
         broadcastStatusChange(userId, "offline");
       },
     };
@@ -131,13 +149,13 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
 
     const lastMessageJson = JSON.stringify({
       content: content.data,
-      type: content.type
+      type: content.type,
     });
-    
+
     ConversationRepository.updateLastMessage(
       destinationId,
       lastMessageJson,
-      savedMsg.createdAt
+      savedMsg.createdAt,
     );
 
     const senderProfile = UserRepository.findProfileById(senderId);
