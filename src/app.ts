@@ -1,14 +1,17 @@
-// src/app.ts  ← New entry file (replace index.ts)
+// src/app.ts
+
+import './db/setup.ts';
+import { initDB } from "./db/setup";
+
+initDB();
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { initDB } from "./db/setup";
-import conversationRoutes from "./modules/conversation/conversation.routes";
-import userRoutes from "./modules/user/user.routes";
 import { wsHandler } from "./ws/ws.handler";
-
-initDB();
+import messageApp from "./modules/message/message.route";
+import conversationApp from "./modules/conversation/conversation.routes";
+import userApp from "./modules/user/user.routes";
 
 const app = new Hono();
 
@@ -17,13 +20,12 @@ app.use("*", cors({ origin: "*" }));
 app.use("*", logger()); // Added for debugging
 
 // Routes
-app.route("/users", userRoutes);
-app.route("/conversations", conversationRoutes);
-app.route("/messages", messageRoutes);
+app.route("/users", userApp);
+app.route("/conversations", conversationApp);
+app.route("/messages", messageApp);
 
-// WebSocket
 app.get("/ws/:token", wsHandler);
 
 app.get("/health", (c) => c.json({ status: true }));
 
-export default app; // Simplified for Bun server
+export default app;

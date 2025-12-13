@@ -1,10 +1,11 @@
-// src/db/setup.ts  ← Renamed from index.ts, added migrations
+// src/db/setup.ts  
 
 import { Database } from "bun:sqlite";
 
 export const db = new Database("data/yaca.sqlite", { create: true });
 
 export function initDB() {
+  console.log("ASDASDA")
   db.run("PRAGMA foreign_keys = ON");
 
   db.run(`
