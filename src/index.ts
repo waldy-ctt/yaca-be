@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { websocket } from "hono/bun";
-import { initDB } from "./db";
+import { initDB } from "./db/setup";
 import userApp from "./modules/user/user.routes";
 import { wsHandler } from "./ws/ws.handler";
 import messageApp from "./modules/message/message.route";

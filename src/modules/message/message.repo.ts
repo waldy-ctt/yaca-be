@@ -1,164 +1,86 @@
-import { db } from "../../db";
-import {
-  MessageInterface,
-  MessageContentInterface,
-  MessageReactionInterface,
-} from "./message.interface";
+// src/modules/message/message.repo.ts
+// ← Full repo with all needed methods
+
+import { db } from "../../db/setup";
+import { MessageInterface, MessageContentInterface, MessageReactionInterface } from "./message.interface";
 
 export class MessageRepository {
-  // 1. Find All (Global - mostly for admin)
-  static findAll(limit: number = 20, cursor?: string) {
-    let sql = "SELECT * FROM message";
-    const params: any = { $limit: limit };
-
-    if (cursor) {
-      // Pagination: Get messages older than the cursor
-      sql += " WHERE createdAt < $cursor";
-      params.$cursor = cursor;
-    }
-
-    sql += " ORDER BY createdAt ASC LIMIT $limit";
-
-    const query = db.query(sql);
-    const rows = query.all(params) as any[];
-    return rows.map((row) => this.mapRowToModel(row));
-  }
-
-  // 2. Find All for a Specific Conversation (CRITICAL for Chat UI) 💬
-  static findByConversationId(
-    conversationId: string,
-    limit: number = 50,
-    cursor?: string,
-  ) {
-    let sql = "SELECT * FROM message WHERE conversationId = $convId";
-    const params: any = {
-      $convId: conversationId,
-      $limit: limit,
-    };
-
-    if (cursor) {
-      // Infinite Scroll: "Load messages older than this timestamp"
-      sql += " AND createdAt < $cursor";
-      params.$cursor = cursor;
-    }
-
-    // Sort Newest -> Oldest (Standard for fetching history)
-    sql += " ORDER BY createdAt ASC LIMIT $limit";
-
-    const query = db.query(sql);
-
-    const rows = query.all(params) as any[];
-
-    return rows.map((row) => this.mapRowToModel(row));
-  }
-
-  // 3. Find One
-  static findById(id: string) {
-    const query = db.query("SELECT * FROM message WHERE id = $id");
-    const row = query.get({ $id: id }) as any;
-    if (!row) return null;
-    return this.mapRowToModel(row);
-  }
-
-  // 4. Create Message
-  static create(message: MessageInterface) {
-    const query = db.query(`
+  private static queries = {
+    findById: db.prepare("SELECT * FROM message WHERE id = ?"),
+    findByConversationId: db.prepare(`
+      SELECT * FROM message
+      WHERE conversationId = ?
+      ORDER BY createdAt DESC
+      LIMIT ?
+    `),
+    insert: db.prepare(`
       INSERT INTO message (id, conversationId, content, reaction, senderId, createdAt, updatedAt)
-      VALUES ($id, $conversationId, $content, $reaction, $senderId, $now, $now)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       RETURNING *
-    `);
+    `),
+    updateContent: db.prepare(`
+      UPDATE message SET content = ?, updatedAt = ?
+      WHERE id = ?
+      RETURNING *
+    `),
+    updateReactions: db.prepare(`
+      UPDATE message SET reaction = ?, updatedAt = ?
+      WHERE id = ?
+      RETURNING *
+    `),
+    delete: db.prepare("DELETE FROM message WHERE id = ? RETURNING id"),
+  };
 
-    // Use query.get() to receive the single inserted row
-    const row = query.get({
-      $id: message.id,
-      $conversationId: message.conversationId,
-      // Serialize Objects to JSON Strings 📦
-      $content: message.content.toJsonString(),
-      $reaction: MessageReactionInterface.arrayToJsonString(message.reaction),
-      $senderId: message.senderId,
-      $now: new Date().toISOString(),
-    }) as any;
-
-    return row ? this.mapRowToModel(row) : null;
+  static findById(id: string): MessageInterface | null {
+    const row = this.queries.findById.get(id);
+    return row ? this.rowToModel(row) : null;
   }
 
-  // 5. Update Message Content (Edit) ✏️
-  static updateContent(id: string, newContent: MessageContentInterface) {
-    const query = db.query(`
-      UPDATE message 
-      SET content = $content, updatedAt = $now 
-      WHERE id = $id
-      RETURNING *
-    `);
-
-    const row = query.get({
-      $id: id,
-      $content: newContent.toJsonString(), // 📦 Re-pack the object
-      $now: new Date().toISOString(),
-    }) as any;
-
-    return row ? this.mapRowToModel(row) : null;
+  static findByConversationId(conversationId: string, limit = 50): MessageInterface[] {
+    const rows = this.queries.findByConversationId.all(conversationId, limit);
+    return rows.map(row => this.rowToModel(row));
   }
 
-  // 6. Update Reactions (The "Set" Approach) 👍
-  // Usage: Get the message -> Modify array in JS -> Pass new array here
-  static updateReactions(id: string, reactions: MessageReactionInterface[]) {
-    const query = db.query(`
-      UPDATE message 
-      SET reaction = $reaction, updatedAt = $now 
-      WHERE id = $id
-      RETURNING *
-    `);
-
-    const row = query.get({
-      $id: id,
-      // 📦 Pack the Array of Objects back into a String
-      $reaction: MessageReactionInterface.arrayToJsonString(reactions),
-      $now: new Date().toISOString(),
-    }) as any;
-
-    return row ? this.mapRowToModel(row) : null;
+  static create(msg: MessageInterface): MessageInterface | null {
+    const now = new Date().toISOString();
+    const row = this.queries.insert.get(
+      msg.id,
+      msg.conversationId,
+      msg.content.toJsonString(),
+      JSON.stringify(msg.reaction),
+      msg.senderId,
+      now,
+      now
+    );
+    return row ? this.rowToModel(row) : null;
   }
 
-  // 7. Delete Message (Hard Delete) 🗑️
+  static updateContent(id: string, newContent: MessageContentInterface): MessageInterface | null {
+    const now = new Date().toISOString();
+    const row = this.queries.updateContent.get(newContent.toJsonString(), now, id);
+    return row ? this.rowToModel(row) : null;
+  }
+
+  static updateReactions(id: string, reactions: MessageReactionInterface[]): MessageInterface | null {
+    const now = new Date().toISOString();
+    const row = this.queries.updateReactions.get(JSON.stringify(reactions), now, id);
+    return row ? this.rowToModel(row) : null;
+  }
+
   static delete(id: string): boolean {
-    const query = db.query("DELETE FROM message WHERE id = $id");
-    const result = query.run({ $id: id });
-
-    // changes > 0 means a row was actually deleted
+    const result = this.queries.delete.run(id);
     return result.changes > 0;
   }
 
-  // ---------------------------------------------------------
-  // 🔧 THE HYDRATOR (Row -> Class Instance)
-  // ---------------------------------------------------------
-  private static mapRowToModel(row: any): MessageInterface {
-    // 1. Unpack Content 📦
-    // We use the static helper we made earlier
-    let content: MessageContentInterface;
-    try {
-      content = MessageContentInterface.fromJsonString(row.content);
-    } catch {
-      // Safety Fallback: If DB data is corrupted, don't crash the app
-      console.warn(`⚠️ Corrupt content for msg ${row.id}`);
-      content = new MessageContentInterface("Error loading message", "text");
-    }
-
-    // 2. Unpack Reactions 📦
-    // We use the static array helper
-    const reactions = MessageReactionInterface.arrayFromJsonString(
-      row.reaction,
-    );
-
-    // 3. Return the clean Class Instance
+  private static rowToModel(row: any): MessageInterface {
     return new MessageInterface(
       row.id,
       row.conversationId,
-      content,
-      reactions,
+      MessageContentInterface.fromJsonString(row.content),
+      JSON.parse(row.reaction || "[]"),
       row.senderId,
       row.createdAt,
-      row.updatedAt,
+      row.updatedAt
     );
   }
 }

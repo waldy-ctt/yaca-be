@@ -3,9 +3,9 @@ import { Context, Hono } from "hono";
 import { UserRepository } from "./user.repo";
 import { sign, verify } from "hono/jwt";
 import { randomUUIDv7 } from "bun";
+import { JWT_SECRET } from "../../config";
 
 const userApp = new Hono();
-export const JWT_SECRET = "CHANGE_ME_TO_SOMETHING_SAFE"; // Move to .env later
 
 userApp.get("/", async (c: Context) => {
   // 1. Parse Query Params

@@ -3,7 +3,6 @@ import { Context, Next } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import { verify } from "hono/jwt";
 import { WSContext } from "hono/ws";
-import { JWT_SECRET } from "../modules/user/user.routes";
 import { MessageRepository } from "../modules/message/message.repo";
 import {
   MessageInterface,
@@ -12,6 +11,8 @@ import {
 } from "../modules/message/message.interface";
 import { randomUUIDv7 } from "bun";
 import { UserRepository } from "../modules/user/user.repo";
+import { JWT_SECRET } from "../config";
+import { ConversationRepository } from "../modules/conversation/conversation.repo";
 
 const clients = new Map<string, WSContext>();
 
@@ -71,6 +72,18 @@ export const wsHandler = async (c: Context, next: Next) => {
                 from: userId,
               });
               break;
+            case "READ":
+              const { conversationId } = data;
+              forwardToConversation(
+                conversationId,
+                {
+                  type: "READ",
+                  conversationId,
+                  readerId: userId,
+                },
+                userId,
+              ); // exclude reader
+              break;
           }
         } catch (e) {
           console.error("WS Error:", e);
@@ -89,7 +102,7 @@ export const wsHandler = async (c: Context, next: Next) => {
 // --- HELPER FUNCTIONS ---
 
 async function handleSendMessage(senderId: string, payload: any, ws: any) {
-  const { conversationId, content, toUserId, tempId } = payload;
+  const { conversationId, content, tempId } = payload; // toUserId no longer needed
 
   const newMessage = new MessageInterface(
     randomUUIDv7(),
@@ -98,6 +111,7 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
     [],
     senderId,
   );
+
   const savedMsg = MessageRepository.create(newMessage);
   if (!savedMsg) return;
 
@@ -111,8 +125,10 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
     },
   };
 
-  forwardToUser(toUserId, eventPayload);
+  // Broadcast to ALL participants except sender
+  forwardToConversation(conversationId, eventPayload, senderId);
 
+  // Send ACK to sender for optimistic UI
   ws.send(
     JSON.stringify({
       type: "ACK",
@@ -123,7 +139,7 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
 }
 
 async function handleEditMessage(senderId: string, payload: any) {
-  const { messageId, newContent, toUserId } = payload;
+  const { messageId, newContent } = payload;
   const updatedMsg = MessageRepository.updateContent(
     messageId,
     new MessageContentInterface(newContent, "text"),
@@ -131,13 +147,12 @@ async function handleEditMessage(senderId: string, payload: any) {
 
   if (updatedMsg) {
     const event = { type: "MESSAGE_UPDATED", message: updatedMsg };
-    forwardToUser(toUserId, event);
-    forwardToUser(senderId, event);
+    forwardToConversation(updatedMsg.conversationId, event, senderId);
   }
 }
 
 async function handleReaction(senderId: string, payload: any) {
-  const { messageId, reactionType, toUserId } = payload;
+  const { messageId, reactionType } = payload;
   const msg = MessageRepository.findById(messageId);
   if (!msg) return;
 
@@ -151,18 +166,19 @@ async function handleReaction(senderId: string, payload: any) {
   const updatedMsg = MessageRepository.updateReactions(messageId, msg.reaction);
   if (updatedMsg) {
     const event = { type: "MESSAGE_UPDATED", message: updatedMsg };
-    forwardToUser(toUserId, event);
-    forwardToUser(senderId, event);
+    forwardToConversation(updatedMsg.conversationId, event, senderId);
   }
 }
 
 async function handleDeleteMessage(senderId: string, payload: any) {
-  const { messageId, toUserId } = payload;
+  const { messageId } = payload;
+  const msg = MessageRepository.findById(messageId);
+  if (!msg) return;
+
   const success = MessageRepository.delete(messageId);
   if (success) {
     const event = { type: "MESSAGE_DELETED", messageId };
-    forwardToUser(toUserId, event);
-    forwardToUser(senderId, event);
+    forwardToConversation(msg.conversationId, event, senderId);
   }
 }
 
@@ -171,4 +187,18 @@ export function forwardToUser(userId: string, data: any) {
   if (socket) {
     socket.send(JSON.stringify(data));
   }
+}
+
+function forwardToConversation(
+  conversationId: string,
+  data: any,
+  excludeUserId?: string,
+) {
+  const conv = ConversationRepository.findById(conversationId);
+  if (!conv) return;
+
+  conv.participants.forEach((pid) => {
+    if (excludeUserId && pid === excludeUserId) return;
+    forwardToUser(pid, data);
+  });
 }

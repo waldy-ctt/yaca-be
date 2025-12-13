@@ -1,5 +1,5 @@
 // src/modules/user/user.repo.ts
-import { db } from "../../db";
+import { db } from "../../db/setup";
 import { removeAccents } from "../lib/util";
 import { UserInterface } from "./user.interface";
 
