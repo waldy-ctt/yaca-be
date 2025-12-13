@@ -5,6 +5,7 @@ export class UserInterface {
   name: string;
   tel: string;
   password: string;
+  bio?: string;
   status: "online" | "offline" | "dnd" | "sleep";
   createdAt?: string;
   updatedAt?: string;
@@ -19,6 +20,7 @@ export class UserInterface {
     createdAt: string,
     updatedAt: string,
     tel: string,
+    bio?: string,
   ) {
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
@@ -29,5 +31,6 @@ export class UserInterface {
     this.password = password;
     this.email = email;
     this.tel = tel;
+    this.bio = bio;
   }
 }

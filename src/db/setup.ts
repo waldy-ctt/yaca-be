@@ -16,6 +16,7 @@ export function initDB() {
       name TEXT NOT NULL,
       password TEXT NOT NULL,
       avatar TEXT,
+      bio TEXT DEFAULT '',
       status TEXT DEFAULT 'offline',
       lastSeen DATETIME,
       search_vector TEXT,
@@ -24,15 +25,23 @@ export function initDB() {
     );
   `);
 
+  // ✅ NEW: Add bio column to existing tables (migration)
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''`);
+    console.log("✅ Added bio column to users table");
+  } catch (e) {
+    // Column already exists, ignore error
+  }
+
   db.run(`
     CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
-      participants TEXT NOT NULL, -- JSON array
+      participants TEXT NOT NULL,
       avatar TEXT,
       name TEXT NOT NULL,
       lastMessage TEXT,
       lastMessageTimestamp DATETIME,
-      pinnedBy TEXT, -- JSON array
+      pinnedBy TEXT,
       createdAt DATETIME NOT NULL,
       updatedAt DATETIME NOT NULL
     );
@@ -43,7 +52,7 @@ export function initDB() {
       id TEXT PRIMARY KEY,
       conversationId TEXT NOT NULL,
       content TEXT NOT NULL,
-      reaction TEXT, -- JSON array
+      reaction TEXT,
       senderId TEXT NOT NULL,
       createdAt DATETIME NOT NULL,
       updatedAt DATETIME NOT NULL,
@@ -53,4 +62,3 @@ export function initDB() {
 
   console.log("✅ Database initialized");
 }
-

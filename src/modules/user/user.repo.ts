@@ -16,16 +16,11 @@ export class UserRepository {
   static findNamesByUserIds(userIds: string[]) {
     if (userIds.length === 0) return [];
 
-    // 1. Create dynamic placeholders (?, ?, ?) based on array length
     const placeholders = userIds.map(() => "?").join(",");
-
-    // 2. Run Query
-    // bun:sqlite allows passing the array directly as arguments for '?'
     const query = db.query(
       `SELECT id, name FROM users WHERE id IN (${placeholders})`,
     );
 
-    // 3. Return Array of Objects
     return query.all(...userIds) as { id: string; name: string }[];
   }
 
@@ -33,53 +28,44 @@ export class UserRepository {
     limit: number = 20,
     cursor?: string,
     keyword?: string,
-    withCurrentUser: boolean = false, // Default: Hide myself
-    currentUserId?: string, // Required if you want to hide yourself
+    withCurrentUser: boolean = false,
+    currentUserId?: string,
   ) {
     let sql =
       "SELECT id, username, email, name, avatar, status, createdAt FROM users";
     const params: any = { $limit: limit };
     const conditions: string[] = [];
 
-    // 1. Keyword Search
     if (keyword) {
       const normKeyword = removeAccents(keyword);
       conditions.push("search_vector LIKE $keyword");
       params.$keyword = `%${normKeyword}%`;
     }
 
-    // 2. Cursor Pagination
     if (cursor) {
       conditions.push("createdAt < $cursor");
       params.$cursor = cursor;
     }
 
-    // 3. 🆕 Exclude Current User
-    // Logic: If "withCurrentUser" is false AND we know who the current user is...
     if (!withCurrentUser && currentUserId) {
       conditions.push("id != $currentUserId");
       params.$currentUserId = currentUserId;
     }
 
-    // Build WHERE Clause
     if (conditions.length > 0) {
       sql += " WHERE " + conditions.join(" AND ");
     }
 
-    // Sort & Limit
     sql += " ORDER BY createdAt DESC LIMIT $limit";
 
     const query = db.query(sql);
     return query.all(params) as UserInterface[];
   }
 
-  // 2. UPDATED CREATE LOGIC
   static create(user: UserInterface) {
-    // A. Generate the Search Vector
     const rawData = `${user.name} ${user.username} ${user.email}`;
     const searchVector = removeAccents(rawData);
 
-    // B. Insert including the new column
     const query = db.query(`
       INSERT INTO users (id, email, username, tel, name, password, createdAt, updatedAt, status, avatar, search_vector)
       VALUES ($id, $email, $username, $tel, $name, $pass, $now, $now, $status, $avatar, $vector)
@@ -94,13 +80,12 @@ export class UserRepository {
       $name: user.name,
       $pass: user.password,
       $now: new Date().toISOString(),
-      $status: "online", // Default to online on signup if you want
+      $status: "online",
       $avatar: null,
-      $vector: searchVector, // <--- The magic sauce
+      $vector: searchVector,
     }) as UserInterface | null;
   }
 
-  // Find by Email OR Username (Flexible Login)
   static findByIdentifier(identifier: string) {
     const query = db.query(
       "SELECT * FROM users WHERE email = $id OR username = $id",
@@ -118,6 +103,7 @@ export class UserRepository {
 
   static updateStatus(id: string, status: "online" | "offline") {
     const now = new Date().toISOString();
+    
     db.run(
       `
       UPDATE users 
@@ -132,26 +118,26 @@ export class UserRepository {
     );
   }
 
+  static getStatus(id: string): "online" | "offline" | "sleep" | "dnd" {
+    const query = db.query("SELECT status FROM users WHERE id = $id");
+    const result = query.get({ $id: id }) as any;
+    return result?.status || "offline";
+  }
+
+  // ✅ UPDATED: Include bio field in update
   static update(id: string, updates: Partial<UserInterface>) {
-    // 1. Fetch current data first
-    // We need this to rebuild the 'search_vector' correctly.
-    // e.g. If they only update 'name', we still need their 'email' to build the vector.
     const currentUser = db
       .query("SELECT * FROM users WHERE id = $id")
       .get({ $id: id }) as UserInterface;
 
     if (!currentUser) return null;
 
-    // 2. Merge old data with new updates
     const merged = { ...currentUser, ...updates };
 
-    // 3. Re-calculate Search Vector 🧠
-    // Even if they didn't change their name, re-running this is safer and cheap.
     const rawData = `${merged.name} ${merged.username} ${merged.email}`;
     const newSearchVector = removeAccents(rawData);
 
-    // 4. Build Dynamic SQL
-    // We update fields + updatedAt + search_vector
+    // ✅ Check if bio column exists, add it if needed
     const query = db.query(`
       UPDATE users
       SET 
@@ -159,6 +145,7 @@ export class UserRepository {
         username = $username,
         tel = $tel,
         status = $status,
+        bio = $bio,
         search_vector = $vector,
         updatedAt = $now
       WHERE id = $id
@@ -171,11 +158,11 @@ export class UserRepository {
       $username: merged.username,
       $tel: merged.tel,
       $status: merged.status,
-      $vector: newSearchVector, // <--- Key Update!
+      $bio: merged.bio || "",
+      $vector: newSearchVector,
       $now: new Date().toISOString(),
     }) as any;
 
-    // 5. Return safe data (remove password)
     if (updatedRow) {
       const { password: _, search_vector: __, ...safeUser } = updatedRow;
       return safeUser;

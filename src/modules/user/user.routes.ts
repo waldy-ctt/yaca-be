@@ -8,17 +8,13 @@ import { JWT_SECRET } from "../../config";
 const userApp = new Hono();
 
 userApp.get("/", async (c: Context) => {
-  // 1. Parse Query Params
   const limit = Number(c.req.query("limit")) || 20;
   const cursor = c.req.query("cursor");
   const keyword = c.req.query("keyword");
-
-  // Fix boolean parsing: Check if string is explicitly "true"
   const withCurrentUser = c.req.query("withCurrentUser") === "true";
 
   let currentUserId: string | undefined;
 
-  // 2. Extract Token (Handle "Bearer <token>")
   const authHeader = c.req.header("Authorization");
 
   if (authHeader) {
@@ -35,14 +31,12 @@ userApp.get("/", async (c: Context) => {
     }
   }
 
-  // 3. Call Repo
-  // Logic: If we want to hide the current user (!withCurrentUser), we MUST pass the ID to exclude
   const users = UserRepository.findAll(
     limit,
     cursor,
     keyword,
     withCurrentUser,
-    currentUserId, // Pass it regardless; repo handles the logic
+    currentUserId,
   );
 
   const nextCursor =
@@ -54,29 +48,27 @@ userApp.get("/", async (c: Context) => {
   });
 });
 
-// 🔵 LOGIN
+// ✅ UPDATED: Set user to online when they login
 userApp.post("/login", async (c: Context) => {
   const { password, identifier } = await c.req.json();
 
   if (!identifier || !password) return c.json({ error: "Missing fields" }, 400);
 
-  // 1. Find User by Email/Username (NOT Password)
   const user = UserRepository.findByIdentifier(identifier);
 
   if (!user) {
-    // Security Tip: Generic error prevents hackers guessing emails
     return c.json({ error: "Invalid credentials" }, 401);
   }
 
-  // 2. Verify Password (The Magic Step) 🪄
-  // Bun checks the 'salt' inside user.password and compares it to input
   const isValid = await Bun.password.verify(password, user.password);
 
   if (!isValid) {
     return c.json({ error: "Invalid credentials" }, 401);
   }
 
-  // 3. Generate Token (Access Pass for WebSocket)
+  // ✅ NEW: Set user status to online when they login
+  UserRepository.updateStatus(user.id, "online");
+
   const token = await sign(
     {
       id: user.id,
@@ -86,8 +78,9 @@ userApp.post("/login", async (c: Context) => {
     JWT_SECRET,
   );
 
-  // 4. Return Token + User Info (BUT remove the password hash!)
-  const { password: _, ...safeUser } = user;
+  // ✅ Get updated user data with online status
+  const updatedUser = UserRepository.findByIdentifier(identifier);
+  const { password: _, ...safeUser } = updatedUser!;
 
   return c.json({
     token,
@@ -95,11 +88,10 @@ userApp.post("/login", async (c: Context) => {
   });
 });
 
-// 🟢 SIGNUP
+// ✅ UPDATED: Set user to online when they signup
 userApp.post("/signup", async (c: Context) => {
   const { password, email, name, username, tel } = await c.req.json();
 
-  // Hash the password before saving
   const hashedPassword = await Bun.password.hash(password, {
     algorithm: "bcrypt",
     cost: 10,
@@ -108,31 +100,32 @@ userApp.post("/signup", async (c: Context) => {
   const id = randomUUIDv7();
 
   try {
-    UserRepository.create({
+    const newUser = UserRepository.create({
       id,
       name,
       password: hashedPassword,
       email,
-      status: "online",
+      status: "online", // ✅ Already set to online in create
       tel,
       username,
     });
 
-    // Auto-login after signup: Generate token immediately
     const token = await sign({ id, username }, JWT_SECRET);
 
-    return c.json({ token, user: { id, username, email } });
+    // Return user without password
+    const { password: _, ...safeUser } = newUser!;
+
+    return c.json({ token, user: safeUser });
   } catch (error) {
-    console.error(error); // Log error for debugging
+    console.error(error);
     return c.json(
       { error: "User already exists (check email/username)" },
-      409, // 409 Conflict is better than 401 here
+      409,
     );
   }
 });
 
 userApp.put("/me", async (c: Context) => {
-  // 1. Auth Check: Get User ID from Token
   const authHeader = c.req.header("Authorization");
   if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
 
@@ -148,24 +141,20 @@ userApp.put("/me", async (c: Context) => {
     return c.json({ error: "Invalid Token" }, 401);
   }
 
-  // 2. Parse Body
   const body = await c.req.json();
 
-  // 3. Prepare Update Object
-  // We explicitly pick fields to prevent users from updating sensitive things (like 'id' or 'password')
   const updatePayload: any = {};
   if (body.status !== undefined) updatePayload.status = body.status;
   if (body.name !== undefined) updatePayload.name = body.name;
   if (body.username !== undefined) updatePayload.username = body.username;
   if (body.tel !== undefined) updatePayload.tel = body.tel;
+  if (body.bio !== undefined) updatePayload.bio = body.bio;
 
-  // 4. Perform Update
   try {
     const updatedUser = UserRepository.update(userId, updatePayload);
     return c.json(updatedUser);
   } catch (e) {
     console.error("Update failed:", e);
-    // Usually fails if username is taken (UNIQUE constraint)
     return c.json({ error: "Update failed. Username might be taken." }, 409);
   }
 });

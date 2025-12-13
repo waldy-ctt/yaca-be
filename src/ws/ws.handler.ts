@@ -29,11 +29,13 @@ export const wsHandler = async (c: Context, next: Next) => {
 
   return upgradeWebSocket((c) => {
     return {
-      // NOTE: On ws connection Open
       onOpen(event, ws) {
         clients.set(userId, ws);
         UserRepository.updateStatus(userId, "online");
-        console.log("User " + userId + " Joined");
+        console.log(`✅ User ${userId} connected (online)`);
+        
+        // Broadcast to all contacts that this user is online
+        broadcastStatusChange(userId, "online");
       },
 
       async onMessage(event, ws) {
@@ -82,7 +84,7 @@ export const wsHandler = async (c: Context, next: Next) => {
                   readerId: userId,
                 },
                 userId,
-              ); // exclude reader
+              );
               break;
           }
         } catch (e) {
@@ -93,6 +95,10 @@ export const wsHandler = async (c: Context, next: Next) => {
       onClose() {
         clients.delete(userId);
         UserRepository.updateStatus(userId, "offline");
+        console.log(`❌ User ${userId} disconnected (offline)`);
+        
+        // Broadcast to all contacts that this user is offline
+        broadcastStatusChange(userId, "offline");
       },
     };
   })(c, next);
@@ -101,7 +107,7 @@ export const wsHandler = async (c: Context, next: Next) => {
 // --- HELPER FUNCTIONS ---
 
 async function handleSendMessage(senderId: string, payload: any, ws: any) {
-  const { destinationId, content, destinationType, tempId } = payload; // toUserId no longer needed
+  const { destinationId, content, destinationType, tempId } = payload;
 
   if (destinationType === "conversation") {
     const newMessage = new MessageInterface(
@@ -115,6 +121,17 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
     const savedMsg = MessageRepository.create(newMessage);
     if (!savedMsg) return;
 
+    const lastMessageJson = JSON.stringify({
+      content: content.data,
+      type: content.type
+    });
+    
+    ConversationRepository.updateLastMessage(
+      destinationId,
+      lastMessageJson,
+      savedMsg.createdAt
+    );
+
     const senderProfile = UserRepository.findProfileById(senderId);
 
     const eventPayload = {
@@ -125,10 +142,8 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
       },
     };
 
-    // Broadcast to ALL participants except sender
     forwardToConversation(destinationId, eventPayload, senderId);
 
-    // Send ACK to sender for optimistic UI
     ws.send(
       JSON.stringify({
         type: "ACK",
@@ -182,6 +197,22 @@ async function handleDeleteMessage(senderId: string, payload: any) {
     const event = { type: "MESSAGE_DELETED", messageId };
     forwardToConversation(msg.conversationId, event, senderId);
   }
+}
+
+// ✅ NEW: Broadcast status changes to all connected users
+function broadcastStatusChange(userId: string, status: "online" | "offline") {
+  const statusPayload = {
+    type: "STATUS_CHANGE",
+    userId,
+    status,
+  };
+
+  // Send to all connected clients
+  clients.forEach((socket, clientId) => {
+    if (clientId !== userId) {
+      socket.send(JSON.stringify(statusPayload));
+    }
+  });
 }
 
 export function forwardToUser(userId: string, data: any) {

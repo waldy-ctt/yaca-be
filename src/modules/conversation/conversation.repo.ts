@@ -2,6 +2,7 @@
 
 import { db } from "../../db/setup";
 import { ConversationInterface } from "./conversation.interface";
+import { UserRepository } from "../user/user.repo";
 
 export class ConversationRepository {
   private static findByIdStmt = db.prepare("SELECT * FROM conversations WHERE id = ?");
@@ -12,20 +13,47 @@ export class ConversationRepository {
     LIMIT ?
   `);
 
-  static findById(id: string): ConversationInterface | null {
+  static findById(id: string, currentUserId?: string): ConversationInterface | null {
     const row = this.findByIdStmt.get(id) as any;
-    return row ? this.rowToConversation(row) : null;
+    if (!row) return null;
+    
+    const conv = this.rowToConversation(row);
+    
+    if (currentUserId) {
+      conv.name = this.getDynamicName(conv, currentUserId);
+    }
+    
+    return conv;
   }
 
+  // ✅ UPDATED: Include opponent status for 1-on-1 chats
   static findAllByUserId(userId: string, limit = 50): ConversationInterface[] {
     const rows = this.findAllByUserStmt.all(`%${userId}%`, limit) as any[];
-    return rows.map(row => this.rowToConversation(row));
+    
+    return rows.map(row => {
+      const conv = this.rowToConversation(row);
+      
+      // Set dynamic name
+      conv.name = this.getDynamicName(conv, userId);
+      
+      // ✅ NEW: For 1-on-1 chats, get opponent's status
+      if (conv.participants.length === 2) {
+        const otherUserId = conv.participants.find(id => id !== userId);
+        if (otherUserId) {
+          const otherUser = UserRepository.findProfileById(otherUserId);
+          // Add status to the conversation object
+          (conv as any).status = otherUser?.status || "offline";
+          (conv as any).avatar = otherUser?.avatar || conv.avatar;
+        }
+      }
+      
+      return conv;
+    });
   }
 
   static findConversationByParticipants(participantIds: string[]): ConversationInterface | null {
     if (participantIds.length === 0) return null;
 
-    // Build pattern: must contain ALL participant IDs
     const patterns = participantIds.map(id => `%${id}%`);
     const placeholders = patterns.map(() => "participants LIKE ?").join(" AND ");
 
@@ -78,7 +106,21 @@ export class ConversationRepository {
     return result.changes > 0;
   }
 
-  // Helper: convert DB row → domain object
+  private static getDynamicName(conv: ConversationInterface, currentUserId: string): string {
+    const participants = conv.participants;
+    
+    if (participants.length === 2) {
+      const otherUserId = participants.find(id => id !== currentUserId);
+      
+      if (otherUserId) {
+        const otherUser = UserRepository.findProfileById(otherUserId);
+        return otherUser?.name || "Unknown User";
+      }
+    }
+    
+    return conv.name || "Group Chat";
+  }
+
   private static rowToConversation(row: any): ConversationInterface {
     return new ConversationInterface(
       row.id,

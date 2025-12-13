@@ -54,8 +54,16 @@ messageApp.post("/", async (c) => {
 
   const saved = MessageRepository.create(newMessage);
 
-  // Update conversation last message
-  ConversationRepository.updateLastMessage(conversationId, content, saved.createdAt);
+  const lastMessageJson = JSON.stringify({
+    content: content,
+    type: "text"
+  });
+  
+  ConversationRepository.updateLastMessage(
+    conversationId, 
+    lastMessageJson,  // Pass JSON string instead of plain text
+    saved.createdAt
+  );
 
   // Broadcast to all participants except sender
   const senderProfile = UserRepository.findProfileById(senderId);
@@ -67,10 +75,6 @@ messageApp.post("/", async (c) => {
   conv.participants.forEach((pid) => {
     if (pid !== senderId) forwardToUser(pid, payload);
   });
-
-  // Send ACK to sender for optimistic UI
-  const ws = c.get("ws"); // if available, or use clients map
-  // For now, assume sender gets it via subscription
 
   return c.json(saved, 201);
 });
