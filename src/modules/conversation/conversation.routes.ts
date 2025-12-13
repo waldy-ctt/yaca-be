@@ -12,6 +12,7 @@ import { verify } from "hono/jwt";
 import { JWT_SECRET } from "../user/user.routes";
 import { UserRepository } from "../user/user.repo";
 import { forwardToUser } from "../../ws/ws.handler";
+import { MessageRepository } from "../message/message.repo";
 
 const conversationApp = new Hono();
 
@@ -20,22 +21,35 @@ conversationApp.get("/", async (c: Context) => {
   return c.json(users);
 });
 
+conversationApp.delete("/:conversationId", async (c: Context) => {
+  const id = c.req.param("conversationId");
+  if (id) {
+    ConversationRepository.delete(id);
+    return c.json(true);
+  } else {
+    return c.json(false);
+  }
+});
+
 conversationApp.get("/:conversationId", async (c: Context) => {
   const conversationId = c.req.param("conversationId");
   const result = ConversationRepository.findById(conversationId);
   return c.json(result);
 });
 
-conversationApp.get("/users/", async (c: Context) => {
+conversationApp.get("/users/:userId", async (c: Context) => {
   const userId = c.req.param("userId");
-  const token = c.req.header("Authorization");
+  const authHeader = c.req.header("Authorization");
   let currentUserId: string;
-  if (token) {
+  if (authHeader) {
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : authHeader;
     const payload = await verify(token, JWT_SECRET);
     currentUserId = payload.id as string;
 
     return c.json(
-      !!ConversationRepository.findConversationByParticipants([
+      ConversationRepository.findConversationByParticipants([
         userId,
         currentUserId,
       ]),
@@ -43,8 +57,15 @@ conversationApp.get("/users/", async (c: Context) => {
   }
 });
 
+// Get all conversation of specific user
+conversationApp.get("/user/:userId", async (c: Context) => {
+  const userId = c.req.param("userId");
+  const result = ConversationRepository.findAllByUserId(userId);
+  return c.json(result);
+});
+
 conversationApp.post("/", async (c: Context) => {
-  const { initMessage, senderId, participants, name, avatar } =
+  const { content, type, senderId, participants, name, avatar } =
     await c.req.json();
 
   const conversationId: string = randomUUIDv7();
@@ -53,23 +74,28 @@ conversationApp.post("/", async (c: Context) => {
   const message = new MessageInterface(
     randomUUIDv7(),
     conversationId,
-    new MessageContentInterface(initMessage.content, initMessage.type),
+    new MessageContentInterface(content, type),
     [],
     senderId,
   );
 
   // 2. Create the Conversation (DB)
+  const userNameList = UserRepository.findNamesByUserIds(participants).map(
+    (data) => data.name,
+  );
+
   const newConversation = new ConversationInterface(
     conversationId,
     participants, // e.g. ["userA", "userB"]
     avatar ?? null,
-    name ?? formatParticipantNames(participants), // You might want to resolve names here
+    name ?? formatParticipantNames(userNameList), // You might want to resolve names here
     message.content.toJsonString(), // Store last message preview
     message.createdAt ?? new Date().toISOString(),
     [],
   );
 
   const savedConv = ConversationRepository.create(newConversation);
+  const savedMessage = MessageRepository.create(message);
 
   // 3. Save the Initial Message (DB) - Don't forget this!
   // Your previous code missed saving the actual message to the message table!

@@ -4,6 +4,22 @@ import { removeAccents } from "../lib/util";
 import { UserInterface } from "./user.interface";
 
 export class UserRepository {
+  static findNamesByUserIds(userIds: string[]) {
+    if (userIds.length === 0) return [];
+
+    // 1. Create dynamic placeholders (?, ?, ?) based on array length
+    const placeholders = userIds.map(() => "?").join(",");
+
+    // 2. Run Query
+    // bun:sqlite allows passing the array directly as arguments for '?'
+    const query = db.query(
+      `SELECT id, name FROM users WHERE id IN (${placeholders})`,
+    );
+
+    // 3. Return Array of Objects
+    return query.all(...userIds) as { id: string; name: string }[];
+  }
+
   static findAll(
     limit: number = 20,
     cursor?: string,

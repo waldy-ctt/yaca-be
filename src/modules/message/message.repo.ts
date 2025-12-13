@@ -17,7 +17,7 @@ export class MessageRepository {
       params.$cursor = cursor;
     }
 
-    sql += " ORDER BY createdAt DESC LIMIT $limit";
+    sql += " ORDER BY createdAt ASC LIMIT $limit";
 
     const query = db.query(sql);
     const rows = query.all(params) as any[];
@@ -43,7 +43,7 @@ export class MessageRepository {
     }
 
     // Sort Newest -> Oldest (Standard for fetching history)
-    sql += " ORDER BY createdAt DESC LIMIT $limit";
+    sql += " ORDER BY createdAt ASC LIMIT $limit";
 
     const query = db.query(sql);
 

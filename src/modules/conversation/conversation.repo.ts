@@ -19,6 +19,36 @@ export class ConversationRepository {
     return rows.map((row) => this.mapRowToModel(row));
   }
 
+  static findAllByUserId(userId: string, limit: number = 20, cursor?: string) {
+    let sql = "SELECT * FROM conversation";
+
+    // 1. Filter: JSON array contains this User ID
+    // We wrap ID in quotes to ensure we match the JSON element exactly
+    const params: any = {
+      $pattern: `%"${userId}"%`,
+      $limit: limit,
+    };
+
+    // Start WHERE clause
+    let whereClause = " WHERE participant LIKE $pattern";
+
+    // 2. Pagination (Cursor based on updatedAt)
+    if (cursor) {
+      whereClause += " AND updatedAt < $cursor";
+      params.$cursor = cursor;
+    }
+
+    sql += whereClause;
+
+    // 3. Sort: Most recent chats at the top
+    sql += " ORDER BY updatedAt DESC LIMIT $limit";
+
+    const query = db.query(sql);
+    const rows = query.all(params) as any[];
+
+    return rows.map((row) => this.mapRowToModel(row));
+  }
+
   static findConversationByParticipants(targetIds: string[]) {
     if (targetIds.length === 0) return null;
 
