@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { randomUUIDv7 } from "bun";
 import { ConversationRepository } from "./conversation.repo";
 import { UserRepository } from "../user/user.repo";
-import { formatParticipantNames } from "../lib/util";
+import { formatParticipantNames } from "../../lib/util";
 import { forwardToUser } from "../../ws/ws.handler";
 import { authMiddleware } from "../../middleware/auth"; // ← we'll create this next
 import { validateCreateConversation } from "../../lib/validation";

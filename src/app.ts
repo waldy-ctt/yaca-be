@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { wsHandler } from "./ws/ws.handler";
-import messageApp from "./modules/message/message.route";
+import messageApp from "./modules/message/message.routes.js";
 import conversationApp from "./modules/conversation/conversation.routes";
 import userApp from "./modules/user/user.routes";
 

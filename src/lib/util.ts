@@ -1,4 +1,4 @@
-import { IDENTIFIER_TYPE } from "./enum";
+import { IDENTIFIER_TYPE } from "../lib/enum";
 
 export const classifyContactInfo = (input: string): IDENTIFIER_TYPE => {
   if (!input) return IDENTIFIER_TYPE.UNKNOWN;
