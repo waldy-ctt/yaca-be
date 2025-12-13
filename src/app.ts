@@ -9,7 +9,9 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { wsHandler } from "./ws/ws.handler";
-import messageApp from "./modules/message/message.routes.js";
+
+// ✅ FIXED: Import correct route files
+import messageApp from "./modules/message/message.routes";
 import conversationApp from "./modules/conversation/conversation.routes";
 import userApp from "./modules/user/user.routes";
 
@@ -24,7 +26,7 @@ app.use("*", cors({
 }));
 app.use("*", logger());
 
-// Routes
+// ✅ Routes - Order matters!
 app.route("/users", userApp);
 app.route("/conversations", conversationApp);
 app.route("/messages", messageApp);
@@ -32,8 +34,13 @@ app.route("/messages", messageApp);
 // WebSocket route
 app.get("/ws/:token", wsHandler);
 
-app.get("/health", (c) => c.json({ status: true }));
+// Health check
+app.get("/health", (c) => c.json({ status: true, timestamp: new Date().toISOString() }));
 
+// 404 handler
+app.notFound((c) => c.json({ error: "Not found" }, 404));
+
+// Start server
 Bun.serve({
   port: process.env.PORT || 3000,
   fetch: app.fetch,

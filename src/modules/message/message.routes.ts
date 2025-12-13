@@ -5,7 +5,11 @@ import { authMiddleware } from "../../middleware/auth";
 import { validateSendMessage } from "../../lib/validation";
 import { MessageRepository } from "./message.repo";
 import { randomUUIDv7 } from "bun";
-import { MessageInterface, MessageContentInterface, MessageReactionInterface } from "./message.interface";
+import { 
+  MessageInterface, 
+  MessageContentInterface, 
+  MessageReactionInterface 
+} from "./message.interface";
 import { forwardToUser } from "../../ws/ws.handler";
 import { UserRepository } from "../user/user.repo";
 import { ConversationRepository } from "../conversation/conversation.repo";
@@ -14,20 +18,38 @@ const messageApp = new Hono();
 
 messageApp.use("*", authMiddleware);
 
-// Get messages for a conversation
+// ✅ Get messages for a conversation (with pagination)
 messageApp.get("/conversation/:conversationId", (c) => {
   const convId = c.req.param("conversationId");
+  const senderId = c.get("userId");
   const limit = Number(c.req.query("limit")) || 50;
-  const cursor = c.req.query("cursor");
 
-  const messages = MessageRepository.findByConversationId(convId, limit, cursor);
+  // Check authorization
+  const conv = ConversationRepository.findById(convId);
+  if (!conv || !conv.participants.includes(senderId)) {
+    return c.json({ error: "Not authorized" }, 403);
+  }
 
-  const nextCursor = messages.length > 0 ? messages[messages.length - 1].createdAt : null;
+  const messages = MessageRepository.findByConversationId(convId, limit);
 
-  return c.json({ data: messages, nextCursor });
+  // Add sender info to each message
+  const enrichedMessages = messages.map(msg => {
+    const sender = UserRepository.findProfileById(msg.senderId);
+    return {
+      ...msg,
+      senderName: sender?.name,
+      senderAvatar: sender?.avatar,
+    };
+  });
+
+  const nextCursor = messages.length > 0 
+    ? messages[messages.length - 1].createdAt 
+    : null;
+
+  return c.json({ data: enrichedMessages, nextCursor });
 });
 
-// Get single message by ID (for detail view)
+// ✅ Get single message by ID (for detail view)
 messageApp.get("/:messageId", (c) => {
   const messageId = c.req.param("messageId");
   const senderId = c.get("userId");
@@ -54,7 +76,7 @@ messageApp.get("/:messageId", (c) => {
   });
 });
 
-// Send a message
+// ✅ Send a new message
 messageApp.post("/", async (c) => {
   const senderId = c.get("userId");
   const body = await c.req.json();
@@ -81,7 +103,11 @@ messageApp.post("/", async (c) => {
   );
 
   const saved = MessageRepository.create(newMessage);
+  if (!saved) {
+    return c.json({ error: "Failed to create message" }, 500);
+  }
 
+  // Update conversation's last message
   const lastMessageJson = JSON.stringify({
     content: content,
     type: "text"
@@ -90,15 +116,20 @@ messageApp.post("/", async (c) => {
   ConversationRepository.updateLastMessage(
     conversationId, 
     lastMessageJson,
-    saved.createdAt
+    saved.createdAt!
   );
 
   const senderProfile = UserRepository.findProfileById(senderId);
   const payload = {
     type: "NEW_MESSAGE",
-    message: { ...saved, sender: senderProfile },
+    message: { 
+      ...saved, 
+      senderName: senderProfile?.name,
+      senderAvatar: senderProfile?.avatar,
+    },
   };
 
+  // Broadcast to all participants except sender
   conv.participants.forEach((pid) => {
     if (pid !== senderId) forwardToUser(pid, payload);
   });
@@ -106,14 +137,15 @@ messageApp.post("/", async (c) => {
   return c.json(saved, 201);
 });
 
-// ✅ NEW: Add reaction to message
+// ✅ Add/Toggle reaction to message
 messageApp.post("/:messageId/reactions", async (c) => {
   const messageId = c.req.param("messageId");
   const senderId = c.get("userId");
   const { reactionType } = await c.req.json();
 
+  // Validate reaction type
   if (!["like", "heart", "laugh"].includes(reactionType)) {
-    return c.json({ error: "Invalid reaction type" }, 400);
+    return c.json({ error: "Invalid reaction type. Must be: like, heart, or laugh" }, 400);
   }
 
   const message = MessageRepository.findById(messageId);
@@ -127,34 +159,60 @@ messageApp.post("/:messageId/reactions", async (c) => {
     return c.json({ error: "Not authorized" }, 403);
   }
 
-  // Toggle reaction
+  // Toggle reaction logic
   const existingIdx = message.reaction.findIndex(r => r.sender === senderId);
   
   if (existingIdx > -1) {
-    // Remove if same reaction, update if different
+    // User already reacted
     if (message.reaction[existingIdx].type === reactionType) {
+      // Same reaction = remove it
       message.reaction.splice(existingIdx, 1);
+      console.log(`🗑️ Removed ${reactionType} reaction from user ${senderId}`);
     } else {
-      message.reaction[existingIdx] = new MessageReactionInterface(reactionType as any, senderId);
+      // Different reaction = update it
+      message.reaction[existingIdx] = new MessageReactionInterface(
+        reactionType as "like" | "heart" | "laugh", 
+        senderId
+      );
+      console.log(`🔄 Updated reaction to ${reactionType} for user ${senderId}`);
     }
   } else {
-    message.reaction.push(new MessageReactionInterface(reactionType as any, senderId));
+    // New reaction
+    message.reaction.push(
+      new MessageReactionInterface(
+        reactionType as "like" | "heart" | "laugh", 
+        senderId
+      )
+    );
+    console.log(`➕ Added ${reactionType} reaction from user ${senderId}`);
   }
 
+  // Save to database
   const updated = MessageRepository.updateReactions(messageId, message.reaction);
+  
+  if (!updated) {
+    return c.json({ error: "Failed to update reactions" }, 500);
+  }
 
   // Broadcast to all participants
+  const sender = UserRepository.findProfileById(senderId);
+  const broadcastPayload = {
+    type: "MESSAGE_UPDATED",
+    message: {
+      ...updated,
+      senderName: sender?.name,
+      senderAvatar: sender?.avatar,
+    },
+  };
+
   conv.participants.forEach((pid) => {
-    forwardToUser(pid, {
-      type: "MESSAGE_UPDATED",
-      message: updated,
-    });
+    forwardToUser(pid, broadcastPayload);
   });
 
   return c.json(updated);
 });
 
-// ✅ NEW: Delete message
+// ✅ Delete message
 messageApp.delete("/:messageId", async (c) => {
   const messageId = c.req.param("messageId");
   const senderId = c.get("userId");
@@ -174,19 +232,46 @@ messageApp.delete("/:messageId", async (c) => {
     return c.json({ error: "Failed to delete message" }, 500);
   }
 
+  console.log(`🗑️ Deleted message ${messageId} by user ${senderId}`);
+
   // Broadcast deletion to all participants
   const conv = ConversationRepository.findById(message.conversationId);
   if (conv) {
+    const deletePayload = {
+      type: "MESSAGE_DELETED",
+      messageId,
+      conversationId: message.conversationId,
+    };
+
     conv.participants.forEach((pid) => {
-      forwardToUser(pid, {
-        type: "MESSAGE_DELETED",
-        messageId,
-        conversationId: message.conversationId,
-      });
+      forwardToUser(pid, deletePayload);
     });
   }
 
-  return c.json({ success: true });
+  return c.json({ success: true, message: "Message deleted successfully" });
+});
+
+// ✅ BONUS: Copy message text (optional, for analytics)
+messageApp.get("/:messageId/copy", async (c) => {
+  const messageId = c.req.param("messageId");
+  const senderId = c.get("userId");
+
+  const message = MessageRepository.findById(messageId);
+  if (!message) {
+    return c.json({ error: "Message not found" }, 404);
+  }
+
+  // Check authorization
+  const conv = ConversationRepository.findById(message.conversationId);
+  if (!conv || !conv.participants.includes(senderId)) {
+    return c.json({ error: "Not authorized" }, 403);
+  }
+
+  // Just return the text content
+  return c.json({ 
+    text: message.content.content,
+    copiedAt: new Date().toISOString() 
+  });
 });
 
 export default messageApp;

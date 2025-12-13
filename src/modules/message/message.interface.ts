@@ -1,3 +1,5 @@
+// src/modules/message/message.interface.ts
+
 export class MessageInterface {
   id: string;
   conversationId: string;
@@ -48,16 +50,16 @@ export class MessageContentInterface {
   }
 }
 
+// ✅ FIXED: Added "laugh" type to match frontend
 export class MessageReactionInterface {
-  type: "like" | "heart";
+  type: "like" | "heart" | "laugh";
   sender: string;
 
-  constructor(type: "like" | "heart", sender: string) {
+  constructor(type: "like" | "heart" | "laugh", sender: string) {
     this.type = type;
     this.sender = sender;
   }
 
-  // 1. Single Object -> JSON String (You already had this)
   toJsonString(): string {
     return JSON.stringify({
       sender: this.sender,
@@ -65,35 +67,28 @@ export class MessageReactionInterface {
     });
   }
 
-  // 2. JSON String -> Single Object (You already had this)
   static fromJsonString(json: string): MessageReactionInterface {
     const parsed = JSON.parse(json);
     return new MessageReactionInterface(parsed.type, parsed.sender);
   }
 
-  // ✅ NEW: Array of Objects -> JSON String (For Saving to SQLite)
   static arrayToJsonString(reactions: MessageReactionInterface[]): string {
-    // JSON.stringify works automatically on arrays of objects!
     return JSON.stringify(reactions);
   }
 
-  // ✅ NEW: JSON String -> Array of Objects (For Reading from SQLite)
   static arrayFromJsonString(json: string): MessageReactionInterface[] {
-    if (!json) return []; // Safety: Handle empty DB columns
+    if (!json) return [];
 
     try {
       const parsed = JSON.parse(json);
-
-      // Safety: Make sure it's actually an array
       if (!Array.isArray(parsed)) return [];
 
-      // Rehydrate: Turn plain JSON objects back into Class Instances
       return parsed.map(
         (item: any) => new MessageReactionInterface(item.type, item.sender),
       );
     } catch (e) {
       console.error("Failed to parse reactions:", e);
-      return []; // Return empty array on error instead of crashing
+      return [];
     }
   }
 }
