@@ -222,6 +222,40 @@ conversationApp.post("/", async (c) => {
   return c.json(savedConv, 201);
 });
 
+// ✅ Update conversation name
+conversationApp.put("/:conversationId", async (c) => {
+  const conversationId = c.req.param("conversationId");
+  const userId = c.get("userId");
+  const { name } = await c.req.json();
+
+  if (!name || typeof name !== "string" || !name.trim()) {
+    return c.json({ error: "Name is required" }, 400);
+  }
+
+  const conversation = ConversationRepository.findById(conversationId);
+
+  if (!conversation) {
+    return c.json({ error: "Conversation not found" }, 404);
+  }
+
+  if (!conversation.participants.includes(userId)) {
+    return c.json({ error: "Not authorized" }, 403);
+  }
+
+  // Update the conversation name
+  const success = ConversationRepository.updateName(conversationId, name.trim());
+
+  if (!success) {
+    return c.json({ error: "Failed to update conversation name" }, 500);
+  }
+
+  console.log(`✏️ Updated conversation ${conversationId} name to: ${name}`);
+
+  // Return updated conversation
+  const updated = ConversationRepository.findById(conversationId, userId);
+  return c.json(updated);
+});
+
 // ✅ Delete conversation
 conversationApp.delete("/:conversationId", (c) => {
   const conversationId = c.req.param("conversationId");

@@ -22,7 +22,6 @@ export class ConversationRepository {
     if (currentUserId) {
       conv.name = this.getDynamicName(conv, currentUserId);
       
-      // ✅ DEBUG: Log what's happening
       console.log(`\n🔍 findById Debug:`);
       console.log(`   Conversation ID: ${id}`);
       console.log(`   Current User ID: ${currentUserId}`);
@@ -116,6 +115,22 @@ export class ConversationRepository {
       SET lastMessage = ?, lastMessageTimestamp = ?, updatedAt = ?
       WHERE id = ?
     `).run(message, timestamp, new Date().toISOString(), id);
+  }
+
+  // ✅ NEW: Update conversation name
+  static updateName(id: string, name: string): boolean {
+    try {
+      const result = db.prepare(`
+        UPDATE conversations 
+        SET name = ?, updatedAt = ?
+        WHERE id = ?
+      `).run(name, new Date().toISOString(), id);
+      
+      return result.changes > 0;
+    } catch (error) {
+      console.error("Failed to update conversation name:", error);
+      return false;
+    }
   }
 
   static delete(id: string): boolean {
