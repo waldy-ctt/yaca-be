@@ -98,11 +98,17 @@ export class UserRepository {
       SELECT id, username, name, avatar, status, lastSeen 
       FROM users WHERE id = $id
     `);
-    return query.get({ $id: id }) as any;
+    const result = query.get({ $id: id }) as any;
+    
+    console.log(`👤 findProfileById(${id}):`, result);
+    
+    return result;
   }
 
   static updateStatus(id: string, status: "online" | "offline") {
     const now = new Date().toISOString();
+    
+    console.log(`📝 Updating user ${id} status to: ${status}`);
     
     db.run(
       `
@@ -116,6 +122,9 @@ export class UserRepository {
         $now: now,
       } as any,
     );
+    
+    const updated = this.findProfileById(id);
+    console.log(`✅ Status updated, now showing: ${updated?.status}`);
   }
 
   static getStatus(id: string): "online" | "offline" | "sleep" | "dnd" {
@@ -124,7 +133,6 @@ export class UserRepository {
     return result?.status || "offline";
   }
 
-  // ✅ UPDATED: Include bio field in update
   static update(id: string, updates: Partial<UserInterface>) {
     const currentUser = db
       .query("SELECT * FROM users WHERE id = $id")
@@ -137,7 +145,6 @@ export class UserRepository {
     const rawData = `${merged.name} ${merged.username} ${merged.email}`;
     const newSearchVector = removeAccents(rawData);
 
-    // ✅ Check if bio column exists, add it if needed
     const query = db.query(`
       UPDATE users
       SET 
@@ -168,5 +175,24 @@ export class UserRepository {
       return safeUser;
     }
     return null;
+  }
+
+  // ✅ NEW: Update password method
+  static updatePassword(id: string, hashedPassword: string): boolean {
+    try {
+      const result = db.run(
+        `UPDATE users SET password = $password, updatedAt = $now WHERE id = $id`,
+        {
+          $id: id,
+          $password: hashedPassword,
+          $now: new Date().toISOString(),
+        } as any
+      );
+      
+      return result.changes > 0;
+    } catch (error) {
+      console.error("Failed to update password:", error);
+      return false;
+    }
   }
 }

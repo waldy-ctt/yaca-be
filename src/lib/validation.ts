@@ -5,13 +5,15 @@ export function validateSignup(body: any) {
   if (!body.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
     errors.push("Invalid email");
   }
-  if (!body.username || body.username.length < 3) {
+  // ✅ Username is now optional
+  if (body.username && body.username.length < 3) {
     errors.push("Username too short");
   }
   if (!body.name || body.name.length < 2) {
     errors.push("Name too short");
   }
-  if (!body.tel || !/^(\+84|0)\d{9}$/.test(body.tel)) {
+  // ✅ Tel is now optional
+  if (body.tel && !/^(\+84|0)?\d{9}$/.test(body.tel)) {
     errors.push("Invalid phone");
   }
   if (!body.password || body.password.length < 6) {

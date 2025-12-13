@@ -1,132 +1,192 @@
-// src/modules/conversation/conversation.routes.ts
+// src/modules/message/message.routes.ts
 
 import { Hono } from "hono";
-import { randomUUIDv7 } from "bun";
-import { ConversationRepository } from "./conversation.repo";
-import { UserRepository } from "../user/user.repo";
-import { formatParticipantNames } from "../../lib/util";
-import { forwardToUser } from "../../ws/ws.handler";
 import { authMiddleware } from "../../middleware/auth";
-import { validateCreateConversation } from "../../lib/validation";
-import { ConversationInterface } from "./conversation.interface";
+import { validateSendMessage } from "../../lib/validation";
+import { randomUUIDv7 } from "bun";
+import { forwardToUser } from "../../ws/ws.handler";
+import { UserRepository } from "../user/user.repo";
+import { ConversationRepository } from "../conversation/conversation.repo";
+import { MessageInterface, MessageContentInterface, MessageReactionInterface } from "../message/message.interface";
+import { MessageRepository } from "../message/message.repo";
 
-const conversationApp = new Hono();
+const messageApp = new Hono();
 
-// Apply auth to all routes
-conversationApp.use("*", authMiddleware);
+messageApp.use("*", authMiddleware);
 
-// ✅ UPDATED: Get single conversation with dynamic name
-conversationApp.get("/:conversationId", (c) => {
-  const id = c.req.param("conversationId");
-  const currentUserId = c.get("userId"); // Get current user from auth
-  
-  const conv = ConversationRepository.findById(id, currentUserId);
-  if (!conv) return c.json({ error: "Not found" }, 404);
-  
-  return c.json(conv);
+// Get messages for a conversation
+messageApp.get("/conversation/:conversationId", (c) => {
+  const convId = c.req.param("conversationId");
+  const limit = Number(c.req.query("limit")) || 50;
+  const cursor = c.req.query("cursor");
+
+  const messages = MessageRepository.findByConversationId(convId, limit, cursor);
+
+  const nextCursor = messages.length > 0 ? messages[messages.length - 1].createdAt : null;
+
+  return c.json({ data: messages, nextCursor });
 });
 
-// ✅ ALREADY CORRECT: This uses findAllByUserId which handles dynamic names
-conversationApp.get("/user/:userId", (c) => {
-  const userId = c.req.param("userId");
-  const conversations = ConversationRepository.findAllByUserId(userId);
-  return c.json(conversations);
-});
+// Get single message by ID (for detail view)
+messageApp.get("/:messageId", (c) => {
+  const messageId = c.req.param("messageId");
+  const senderId = c.get("userId");
 
-// ✅ UPDATED: Get or find existing conversation with dynamic name
-conversationApp.get("/users/:userId", (c) => {
-  const targetId = c.req.param("userId");
-  const currentUserId = c.get("userId");
-
-  const conv = ConversationRepository.findConversationByParticipants([
-    currentUserId,
-    targetId,
-  ]);
-
-  if (!conv) return c.json(null);
+  const message = MessageRepository.findById(messageId);
   
-  // Apply dynamic naming for 1-on-1
-  if (conv.participants.length === 2) {
-    const otherUserId = conv.participants.find(id => id !== currentUserId);
-    if (otherUserId) {
-      const otherUser = UserRepository.findProfileById(otherUserId);
-      conv.name = otherUser?.name || "Unknown User";
-    }
+  if (!message) {
+    return c.json({ error: "Message not found" }, 404);
   }
-  
-  return c.json(conv);
+
+  // Check if user is part of the conversation
+  const conv = ConversationRepository.findById(message.conversationId);
+  if (!conv || !conv.participants.includes(senderId)) {
+    return c.json({ error: "Not authorized" }, 403);
+  }
+
+  // Get sender info
+  const sender = UserRepository.findProfileById(message.senderId);
+
+  return c.json({
+    ...message,
+    senderName: sender?.name,
+    senderAvatar: sender?.avatar,
+  });
 });
 
-// DELETE conversation
-conversationApp.delete("/:conversationId", (c) => {
-  const id = c.req.param("conversationId");
-  const success = ConversationRepository.delete(id);
-  return c.json({ success });
-});
-
-// CREATE new conversation
-conversationApp.post("/", async (c) => {
-  const currentUserId = c.get("userId");
-
+// Send a message
+messageApp.post("/", async (c) => {
+  const senderId = c.get("userId");
   const body = await c.req.json();
-  const validation = validateCreateConversation(body);
 
+  const validation = validateSendMessage(body);
   if (!validation.success) {
     return c.json({ error: "Invalid input", details: validation.errors }, 400);
   }
 
-  const { participants } = validation.data;
+  const { conversationId, content, tempId } = validation.data;
 
-  // Security: current user must be in participants
-  if (!participants.includes(currentUserId)) {
-    return c.json({ error: "You must be a participant" }, 400);
+  const conv = ConversationRepository.findById(conversationId);
+  if (!conv || !conv.participants.includes(senderId)) {
+    return c.json({ error: "Not authorized" }, 403);
   }
 
-  // Idempotent: return existing if already exists
-  const existing = ConversationRepository.findConversationByParticipants(participants);
-  if (existing) {
-    // Apply dynamic naming before returning
-    if (existing.participants.length === 2) {
-      const otherUserId = existing.participants.find(id => id !== currentUserId);
-      if (otherUserId) {
-        const otherUser = UserRepository.findProfileById(otherUserId);
-        existing.name = otherUser?.name || "Unknown User";
-      }
-    }
-    return c.json(existing);
-  }
-
-  // Generate name from participant names
-  const names = UserRepository.findNamesByUserIds(participants).map((u) => u.name);
-  const name = body.name || formatParticipantNames(names);
-
-  const convId = randomUUIDv7();
-
-  const newConv = new ConversationInterface(
-    convId,
-    participants,
-    body.avatar ?? null,
-    name, // This will be the group name for 3+ participants
-    "",
-    new Date().toISOString(),
+  const messageId = randomUUIDv7();
+  const newMessage = new MessageInterface(
+    messageId,
+    conversationId,
+    new MessageContentInterface(content, "text"),
     [],
+    senderId
   );
 
-  const saved = ConversationRepository.create(newConv);
+  const saved = MessageRepository.create(newMessage);
 
-  // Notify all participants except creator
+  const lastMessageJson = JSON.stringify({
+    content: content,
+    type: "text"
+  });
+  
+  ConversationRepository.updateLastMessage(
+    conversationId, 
+    lastMessageJson,
+    saved.createdAt
+  );
+
+  const senderProfile = UserRepository.findProfileById(senderId);
   const payload = {
-    type: "NEW_CONVERSATION",
-    conversation: saved,
+    type: "NEW_MESSAGE",
+    message: { ...saved, sender: senderProfile },
   };
 
-  participants.forEach((pid) => {
-    if (pid !== currentUserId) {
-      forwardToUser(pid, payload);
-    }
+  conv.participants.forEach((pid) => {
+    if (pid !== senderId) forwardToUser(pid, payload);
   });
 
   return c.json(saved, 201);
 });
 
-export default conversationApp;
+// ✅ NEW: Add reaction to message
+messageApp.post("/:messageId/reactions", async (c) => {
+  const messageId = c.req.param("messageId");
+  const senderId = c.get("userId");
+  const { reactionType } = await c.req.json();
+
+  if (!["like", "heart", "laugh"].includes(reactionType)) {
+    return c.json({ error: "Invalid reaction type" }, 400);
+  }
+
+  const message = MessageRepository.findById(messageId);
+  if (!message) {
+    return c.json({ error: "Message not found" }, 404);
+  }
+
+  // Check authorization
+  const conv = ConversationRepository.findById(message.conversationId);
+  if (!conv || !conv.participants.includes(senderId)) {
+    return c.json({ error: "Not authorized" }, 403);
+  }
+
+  // Toggle reaction
+  const existingIdx = message.reaction.findIndex(r => r.sender === senderId);
+  
+  if (existingIdx > -1) {
+    // Remove if same reaction, update if different
+    if (message.reaction[existingIdx].type === reactionType) {
+      message.reaction.splice(existingIdx, 1);
+    } else {
+      message.reaction[existingIdx] = new MessageReactionInterface(reactionType as any, senderId);
+    }
+  } else {
+    message.reaction.push(new MessageReactionInterface(reactionType as any, senderId));
+  }
+
+  const updated = MessageRepository.updateReactions(messageId, message.reaction);
+
+  // Broadcast to all participants
+  conv.participants.forEach((pid) => {
+    forwardToUser(pid, {
+      type: "MESSAGE_UPDATED",
+      message: updated,
+    });
+  });
+
+  return c.json(updated);
+});
+
+// ✅ NEW: Delete message
+messageApp.delete("/:messageId", async (c) => {
+  const messageId = c.req.param("messageId");
+  const senderId = c.get("userId");
+
+  const message = MessageRepository.findById(messageId);
+  if (!message) {
+    return c.json({ error: "Message not found" }, 404);
+  }
+
+  // Only sender can delete their own message
+  if (message.senderId !== senderId) {
+    return c.json({ error: "You can only delete your own messages" }, 403);
+  }
+
+  const success = MessageRepository.delete(messageId);
+  if (!success) {
+    return c.json({ error: "Failed to delete message" }, 500);
+  }
+
+  // Broadcast deletion to all participants
+  const conv = ConversationRepository.findById(message.conversationId);
+  if (conv) {
+    conv.participants.forEach((pid) => {
+      forwardToUser(pid, {
+        type: "MESSAGE_DELETED",
+        messageId,
+        conversationId: message.conversationId,
+      });
+    });
+  }
+
+  return c.json({ success: true });
+});
+
+export default messageApp;

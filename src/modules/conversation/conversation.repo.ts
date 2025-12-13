@@ -21,27 +21,44 @@ export class ConversationRepository {
     
     if (currentUserId) {
       conv.name = this.getDynamicName(conv, currentUserId);
+      
+      // ✅ DEBUG: Log what's happening
+      console.log(`\n🔍 findById Debug:`);
+      console.log(`   Conversation ID: ${id}`);
+      console.log(`   Current User ID: ${currentUserId}`);
+      console.log(`   Participants: ${JSON.stringify(conv.participants)}`);
+      
+      // Add status for 1-on-1
+      if (conv.participants.length === 2) {
+        const otherUserId = conv.participants.find(pid => pid !== currentUserId);
+        console.log(`   Opponent ID: ${otherUserId}`);
+        
+        if (otherUserId) {
+          const otherUser = UserRepository.findProfileById(otherUserId);
+          console.log(`   Opponent Data:`, otherUser);
+          
+          (conv as any).status = otherUser?.status || "offline";
+          (conv as any).avatar = otherUser?.avatar || conv.avatar;
+          
+          console.log(`   ✅ Set status to: ${(conv as any).status}\n`);
+        }
+      }
     }
     
     return conv;
   }
 
-  // ✅ UPDATED: Include opponent status for 1-on-1 chats
   static findAllByUserId(userId: string, limit = 50): ConversationInterface[] {
     const rows = this.findAllByUserStmt.all(`%${userId}%`, limit) as any[];
     
     return rows.map(row => {
       const conv = this.rowToConversation(row);
-      
-      // Set dynamic name
       conv.name = this.getDynamicName(conv, userId);
       
-      // ✅ NEW: For 1-on-1 chats, get opponent's status
       if (conv.participants.length === 2) {
         const otherUserId = conv.participants.find(id => id !== userId);
         if (otherUserId) {
           const otherUser = UserRepository.findProfileById(otherUserId);
-          // Add status to the conversation object
           (conv as any).status = otherUser?.status || "offline";
           (conv as any).avatar = otherUser?.avatar || conv.avatar;
         }

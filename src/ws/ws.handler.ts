@@ -33,8 +33,9 @@ export const wsHandler = async (c: Context, next: Next) => {
         clients.set(userId, ws);
         UserRepository.updateStatus(userId, "online");
         console.log(`✅ User ${userId} connected (online)`);
+        console.log(`📊 Total connected clients: ${clients.size}`);
         
-        // Broadcast to all contacts that this user is online
+        // ✅ Broadcast immediately - no delay needed since we already added to map
         broadcastStatusChange(userId, "online");
       },
 
@@ -54,7 +55,8 @@ export const wsHandler = async (c: Context, next: Next) => {
 
         try {
           const data = JSON.parse(raw);
-          console.log("WS Data: ", data);
+          console.log("📨 WS Data:", data);
+          
           switch (data.type) {
             case "SEND_MESSAGE":
               await handleSendMessage(userId, data, ws);
@@ -69,10 +71,17 @@ export const wsHandler = async (c: Context, next: Next) => {
               await handleDeleteMessage(userId, data);
               break;
             case "TYPING":
-              forwardToUser(data.toUserId, {
-                type: "USER_TYPING",
-                from: userId,
-              });
+              // ✅ FIXED: Broadcast typing to all participants in conversation
+              console.log(`⌨️ User ${userId} typing in conversation ${data.conversationId}`);
+              forwardToConversation(
+                data.conversationId,
+                {
+                  type: "USER_TYPING",
+                  conversationId: data.conversationId,
+                  from: userId,
+                },
+                userId // Exclude the sender
+              );
               break;
             case "READ":
               const { conversationId } = data;
@@ -97,7 +106,6 @@ export const wsHandler = async (c: Context, next: Next) => {
         UserRepository.updateStatus(userId, "offline");
         console.log(`❌ User ${userId} disconnected (offline)`);
         
-        // Broadcast to all contacts that this user is offline
         broadcastStatusChange(userId, "offline");
       },
     };
@@ -199,7 +207,6 @@ async function handleDeleteMessage(senderId: string, payload: any) {
   }
 }
 
-// ✅ NEW: Broadcast status changes to all connected users
 function broadcastStatusChange(userId: string, status: "online" | "offline") {
   const statusPayload = {
     type: "STATUS_CHANGE",
@@ -207,7 +214,8 @@ function broadcastStatusChange(userId: string, status: "online" | "offline") {
     status,
   };
 
-  // Send to all connected clients
+  console.log(`📡 Broadcasting status change: User ${userId} is now ${status}`);
+
   clients.forEach((socket, clientId) => {
     if (clientId !== userId) {
       socket.send(JSON.stringify(statusPayload));
@@ -229,6 +237,8 @@ function forwardToConversation(
 ) {
   const conv = ConversationRepository.findById(conversationId);
   if (!conv) return;
+
+  console.log(`📤 Broadcasting to conversation ${conversationId}:`, data.type);
 
   conv.participants.forEach((pid) => {
     if (excludeUserId && pid === excludeUserId) return;
