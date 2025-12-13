@@ -87,8 +87,8 @@ export const wsHandler = async (c: Context, next: Next) => {
             case "READ":
               // ✅ Broadcast READ event to all participants
               const { conversationId } = data;
-              console.log(
-                `📖 [WS] User ${userId} marking conversation ${conversationId} as read`,
+              // console.log(
+              //   `📖 [WS] User ${userId} marking conversation ${conversationId} as read`,
               );
 
               const conv = ConversationRepository.findById(conversationId);
