@@ -30,7 +30,6 @@ export const wsHandler = async (c: Context, next: Next) => {
   return upgradeWebSocket((c) => {
     return {
       onOpen(event, ws) {
-        console.log(`🟢 User ${userId} connected`);
         clients.set(userId, ws);
         UserRepository.updateStatus(userId, "online");
       },
@@ -51,7 +50,6 @@ export const wsHandler = async (c: Context, next: Next) => {
 
         try {
           const data = JSON.parse(raw);
-          console.log(`📨 [${userId}] Event: ${data.type}`);
 
           switch (data.type) {
             case "SEND_MESSAGE":
@@ -92,7 +90,6 @@ export const wsHandler = async (c: Context, next: Next) => {
 
       onClose() {
         clients.delete(userId);
-        console.log(`🔴 User ${userId} disconnected`);
         UserRepository.updateStatus(userId, "offline");
       },
     };

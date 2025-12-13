@@ -31,6 +31,7 @@ userApp.get("/", async (c: Context) => {
       currentUserId = payload.id as string;
     } catch (e) {
       console.log("Token verification failed:", e);
+      return c.json({ error: "Unauthorized" }, 401);
       // Optional: Return 401 here if auth is strictly required
     }
   }
@@ -136,7 +137,9 @@ userApp.put("/me", async (c: Context) => {
   const authHeader = c.req.header("Authorization");
   if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
 
-  const token = authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : authHeader;
+  const token = authHeader.startsWith("Bearer ")
+    ? authHeader.split(" ")[1]
+    : authHeader;
   let userId: string;
 
   try {
