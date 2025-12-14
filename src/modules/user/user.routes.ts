@@ -102,7 +102,8 @@ userApp.post("/signup", async (c: Context) => {
 
   // ✅ Generate random username if not provided
   const finalUsername = username || `user_${id.slice(0, 8)}`;
-  
+  console.log("ASDASDA: ", finalUsername);
+
   // ✅ Generate placeholder tel if not provided
   const finalTel = tel || `000${id.slice(0, 8)}`;
 
@@ -162,7 +163,10 @@ userApp.put("/me", async (c: Context) => {
     return c.json(updatedUser);
   } catch (e) {
     console.error("Update failed:", e);
-    return c.json({ error: "Update failed. Username/phone might be taken." }, 409);
+    return c.json(
+      { error: "Update failed. Username/phone might be taken." },
+      409,
+    );
   }
 });
 
@@ -186,7 +190,10 @@ userApp.put("/me/password", async (c: Context) => {
   const { currentPassword, newPassword } = await c.req.json();
 
   if (!currentPassword || !newPassword) {
-    return c.json({ error: "Both currentPassword and newPassword are required" }, 400);
+    return c.json(
+      { error: "Both currentPassword and newPassword are required" },
+      400,
+    );
   }
 
   if (newPassword.length < 6) {
@@ -227,11 +234,11 @@ userApp.put("/me/password", async (c: Context) => {
 userApp.get("/:userId", async (c: Context) => {
   const userId = c.req.param("userId");
   const result = UserRepository.findUserByUserId(userId);
-  
+
   if (!result) {
     return c.json({ error: "User not found" }, 404);
   }
-  
+
   // Don't send password to frontend
   const { password: _, ...safeUser } = result;
   return c.json(safeUser);

@@ -89,7 +89,7 @@ export const wsHandler = async (c: Context, next: Next) => {
               const { conversationId } = data;
               // console.log(
               //   `📖 [WS] User ${userId} marking conversation ${conversationId} as read`,
-              );
+              // );
 
               const conv = ConversationRepository.findById(conversationId);
               if (!conv) {
