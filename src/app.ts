@@ -40,10 +40,16 @@ app.get("/health", (c) => c.json({ status: true, timestamp: new Date().toISOStri
 // 404 handler
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
-// Start server
+// ✅ FIX: Start server with WebSocket support
 Bun.serve({
   port: process.env.PORT || 3000,
   fetch: app.fetch,
+  // ✅ Add WebSocket handler configuration
+  websocket: {
+    message() {}, // Will be handled by Hono's upgradeWebSocket
+    open() {},
+    close() {},
+  },
 });
 
 console.log(`🚀 Server running on http://localhost:${process.env.PORT || 3000}`);

@@ -102,7 +102,6 @@ userApp.post("/signup", async (c: Context) => {
 
   // ✅ Generate random username if not provided
   const finalUsername = username || `user_${id.slice(0, 8)}`;
-  console.log("ASDASDA: ", finalUsername);
 
   // ✅ Generate placeholder tel if not provided
   const finalTel = tel || `000${id.slice(0, 8)}`;
