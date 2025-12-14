@@ -49,7 +49,6 @@ app.notFound((c) => c.json({ error: "Not found" }, 404));
 Bun.serve({
   port: process.env.PORT || 3000,
   fetch: app.fetch,
-  // ✅ Add WebSocket handler configuration
   websocket: {
     message() {}, 
     open() {},
