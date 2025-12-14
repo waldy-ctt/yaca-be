@@ -22,7 +22,7 @@ WORKDIR /app
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/bun.lock ./
 COPY --from=builder /app/src ./src
-COPY --from=builder /app/data ./data  # if you want persistent data (better with volume)
+RUN mkdir -p data
 
 # Install only production deps
 RUN bun install --frozen-lockfile --production
