@@ -35,7 +35,6 @@ export const wsHandler = async (c: Context, next: Next) => {
         console.log(`✅ User ${userId} connected (online)`);
         console.log(`📊 Total connected clients: ${clients.size}`);
 
-        // ✅ Broadcast immediately - no delay needed since we already added to map
         broadcastStatusChange(userId, "online");
       },
 
@@ -85,12 +84,7 @@ export const wsHandler = async (c: Context, next: Next) => {
               );
               break;
             case "READ":
-              // ✅ Broadcast READ event to all participants
               const { conversationId } = data;
-              // console.log(
-              //   `📖 [WS] User ${userId} marking conversation ${conversationId} as read`,
-              // );
-
               const conv = ConversationRepository.findById(conversationId);
               if (!conv) {
                 console.log(`   ❌ Conversation ${conversationId} not found`);
@@ -101,7 +95,6 @@ export const wsHandler = async (c: Context, next: Next) => {
                 `   📡 Broadcasting READ to ${conv.participants.length} participants`,
               );
 
-              // ✅ Send READ confirmation back to sender AND all others
               conv.participants.forEach((pid) => {
                 console.log(`      → Sending to participant ${pid}`);
                 forwardToUser(pid, {
@@ -135,9 +128,13 @@ export const wsHandler = async (c: Context, next: Next) => {
 async function handleSendMessage(senderId: string, payload: any, ws: any) {
   const { destinationId, content, destinationType, tempId } = payload;
 
+  console.log("📤 handleSendMessage:", { senderId, destinationId, tempId });
+
   if (destinationType === "conversation") {
+    // ✅ Create message with actual ID
+    const messageId = randomUUIDv7();
     const newMessage = new MessageInterface(
-      randomUUIDv7(),
+      messageId,
       destinationId,
       new MessageContentInterface(content.data, content.type),
       [],
@@ -145,8 +142,14 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
     );
 
     const savedMsg = MessageRepository.create(newMessage);
-    if (!savedMsg) return;
+    if (!savedMsg) {
+      console.error("❌ Failed to save message");
+      return;
+    }
 
+    console.log("✅ Message saved with ID:", savedMsg.id);
+
+    // Update conversation last message
     const lastMessageJson = JSON.stringify({
       content: content.data,
       type: content.type,
@@ -155,29 +158,35 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
     ConversationRepository.updateLastMessage(
       destinationId,
       lastMessageJson,
-      savedMsg.createdAt,
+      savedMsg.createdAt!,
     );
 
+    // Get sender profile for enrichment
     const senderProfile = UserRepository.findProfileById(senderId);
 
-    const eventPayload = {
-      type: "NEW_MESSAGE",
-      message: {
-        ...savedMsg,
-        sender: senderProfile,
-      },
+    const enrichedMessage = {
+      ...savedMsg,
+      senderName: senderProfile?.name,
+      senderAvatar: senderProfile?.avatar,
     };
 
-    forwardToConversation(destinationId, eventPayload, senderId);
-
+    // ✅ FIX: Send ACK back to sender with correct structure
+    console.log("📤 Sending ACK to sender:", { tempId, messageId: savedMsg.id });
     ws.send(
       JSON.stringify({
         type: "ACK",
-        fromConversationId: destinationId,
-        message: savedMsg,
-        tempId: tempId,
+        tempId: tempId,           // ✅ Frontend uses this to find optimistic message
+        message: enrichedMessage,  // ✅ Complete message data
       }),
     );
+
+    // Broadcast to other participants
+    const eventPayload = {
+      type: "NEW_MESSAGE",
+      message: enrichedMessage,
+    };
+
+    forwardToConversation(destinationId, eventPayload, senderId);
   }
 }
 
