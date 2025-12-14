@@ -46,7 +46,8 @@ app.get("/health", (c) => c.json({ status: true, timestamp: new Date().toISOStri
 // 404 handler
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
-Bun.serve({
+// ✅ Export the app as default (let Bun handle serving in production)
+export default {
   port: process.env.PORT || 3000,
   fetch: app.fetch,
   websocket: {
@@ -54,8 +55,6 @@ Bun.serve({
     open() {},
     close() {},
   },
-});
+};
 
-console.log(`🚀 Server running on http://localhost:${process.env.PORT || 3000}`);
-
-export default app;
+console.log(`🚀 Server ready on port ${process.env.PORT || 3000}`);
