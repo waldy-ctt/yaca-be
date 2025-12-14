@@ -12,7 +12,7 @@ import {
 import { randomUUIDv7 } from "bun";
 import { UserRepository } from "../modules/user/user.repo";
 import { JWT_SECRET } from "../config";
-import { ConversationRepository } from "../modules/conversation/conversation.repo";
+import { ConversationRepository } from "../conversation/conversation.repo";
 
 const clients = new Map<string, WSContext>();
 
@@ -32,9 +32,7 @@ export const wsHandler = async (c: Context, next: Next) => {
       onOpen(event, ws) {
         clients.set(userId, ws);
         UserRepository.updateStatus(userId, "online");
-        console.log(`✅ User ${userId} connected (online)`);
-        console.log(`📊 Total connected clients: ${clients.size}`);
-
+        console.log(`✅ User ${userId} connected | Total: ${clients.size}`);
         broadcastStatusChange(userId, "online");
       },
 
@@ -54,7 +52,6 @@ export const wsHandler = async (c: Context, next: Next) => {
 
         try {
           const data = JSON.parse(raw);
-          console.log("📨 WS Data:", data);
 
           switch (data.type) {
             case "SEND_MESSAGE":
@@ -70,9 +67,6 @@ export const wsHandler = async (c: Context, next: Next) => {
               await handleDeleteMessage(userId, data);
               break;
             case "TYPING":
-              console.log(
-                `⌨️ User ${userId} typing in conversation ${data.conversationId}`,
-              );
               forwardToConversation(
                 data.conversationId,
                 {
@@ -84,39 +78,27 @@ export const wsHandler = async (c: Context, next: Next) => {
               );
               break;
             case "READ":
-              const { conversationId } = data;
-              const conv = ConversationRepository.findById(conversationId);
-              if (!conv) {
-                console.log(`   ❌ Conversation ${conversationId} not found`);
-                break;
-              }
-
-              console.log(
-                `   📡 Broadcasting READ to ${conv.participants.length} participants`,
-              );
-
-              conv.participants.forEach((pid) => {
-                console.log(`      → Sending to participant ${pid}`);
-                forwardToUser(pid, {
-                  type: "READ",
-                  conversationId,
-                  readerId: userId,
+              const conv = ConversationRepository.findById(data.conversationId);
+              if (conv) {
+                conv.participants.forEach((pid) => {
+                  forwardToUser(pid, {
+                    type: "READ",
+                    conversationId: data.conversationId,
+                    readerId: userId,
+                  });
                 });
-              });
-
-              console.log(`   ✅ READ event broadcast complete`);
+              }
               break;
           }
         } catch (e) {
-          console.error("WS Error:", e);
+          console.error("❌ WS Error:", e);
         }
       },
 
       onClose() {
         clients.delete(userId);
         UserRepository.updateStatus(userId, "offline");
-        console.log(`❌ User ${userId} disconnected (offline)`);
-
+        console.log(`❌ User ${userId} disconnected | Total: ${clients.size}`);
         broadcastStatusChange(userId, "offline");
       },
     };
@@ -128,10 +110,7 @@ export const wsHandler = async (c: Context, next: Next) => {
 async function handleSendMessage(senderId: string, payload: any, ws: any) {
   const { destinationId, content, destinationType, tempId } = payload;
 
-  console.log("📤 handleSendMessage:", { senderId, destinationId, tempId });
-
   if (destinationType === "conversation") {
-    // ✅ Create message with actual ID
     const messageId = randomUUIDv7();
     const newMessage = new MessageInterface(
       messageId,
@@ -147,9 +126,7 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
       return;
     }
 
-    console.log("✅ Message saved with ID:", savedMsg.id);
-
-    // Update conversation last message
+    // Update conversation
     const lastMessageJson = JSON.stringify({
       content: content.data,
       type: content.type,
@@ -161,7 +138,7 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
       savedMsg.createdAt!,
     );
 
-    // Get sender profile for enrichment
+    // Get sender profile
     const senderProfile = UserRepository.findProfileById(senderId);
 
     const enrichedMessage = {
@@ -170,23 +147,20 @@ async function handleSendMessage(senderId: string, payload: any, ws: any) {
       senderAvatar: senderProfile?.avatar,
     };
 
-    // ✅ FIX: Send ACK back to sender with correct structure
-    console.log("📤 Sending ACK to sender:", { tempId, messageId: savedMsg.id });
+    // ✅ Send ACK to sender
     ws.send(
       JSON.stringify({
         type: "ACK",
-        tempId: tempId,           // ✅ Frontend uses this to find optimistic message
-        message: enrichedMessage,  // ✅ Complete message data
+        tempId: tempId,
+        message: enrichedMessage,
       }),
     );
 
-    // Broadcast to other participants
-    const eventPayload = {
+    // Broadcast to others
+    forwardToConversation(destinationId, {
       type: "NEW_MESSAGE",
       message: enrichedMessage,
-    };
-
-    forwardToConversation(destinationId, eventPayload, senderId);
+    }, senderId);
   }
 }
 
@@ -198,8 +172,10 @@ async function handleEditMessage(senderId: string, payload: any) {
   );
 
   if (updatedMsg) {
-    const event = { type: "MESSAGE_UPDATED", message: updatedMsg };
-    forwardToConversation(updatedMsg.conversationId, event, senderId);
+    forwardToConversation(updatedMsg.conversationId, {
+      type: "MESSAGE_UPDATED",
+      message: updatedMsg,
+    }, senderId);
   }
 }
 
@@ -217,8 +193,10 @@ async function handleReaction(senderId: string, payload: any) {
 
   const updatedMsg = MessageRepository.updateReactions(messageId, msg.reaction);
   if (updatedMsg) {
-    const event = { type: "MESSAGE_UPDATED", message: updatedMsg };
-    forwardToConversation(updatedMsg.conversationId, event, senderId);
+    forwardToConversation(updatedMsg.conversationId, {
+      type: "MESSAGE_UPDATED",
+      message: updatedMsg,
+    }, senderId);
   }
 }
 
@@ -229,8 +207,10 @@ async function handleDeleteMessage(senderId: string, payload: any) {
 
   const success = MessageRepository.delete(messageId);
   if (success) {
-    const event = { type: "MESSAGE_DELETED", messageId };
-    forwardToConversation(msg.conversationId, event, senderId);
+    forwardToConversation(msg.conversationId, {
+      type: "MESSAGE_DELETED",
+      messageId,
+    }, senderId);
   }
 }
 
@@ -240,8 +220,6 @@ function broadcastStatusChange(userId: string, status: "online" | "offline") {
     userId,
     status,
   };
-
-  console.log(`📡 Broadcasting status change: User ${userId} is now ${status}`);
 
   clients.forEach((socket, clientId) => {
     if (clientId !== userId) {
@@ -264,8 +242,6 @@ function forwardToConversation(
 ) {
   const conv = ConversationRepository.findById(conversationId);
   if (!conv) return;
-
-  console.log(`📤 Broadcasting to conversation ${conversationId}:`, data.type);
 
   conv.participants.forEach((pid) => {
     if (excludeUserId && pid === excludeUserId) return;
