@@ -17,13 +17,19 @@ import userApp from "./modules/user/user.routes";
 
 const app = new Hono();
 
-// Middleware
-app.use("*", cors({ 
-  origin: "*",
+// ✅ FIXED: Enhanced CORS configuration
+app.use("*", cors({
+  origin: (origin) => {
+    // Allow all origins (or specify your frontend URL)
+    return origin || "*";
+  },
   credentials: true,
-  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization"],
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  exposeHeaders: ["Content-Length", "X-Request-Id"],
+  maxAge: 86400, // 24 hours
 }));
+
 app.use("*", logger());
 
 // ✅ Routes - Order matters!
@@ -40,7 +46,6 @@ app.get("/health", (c) => c.json({ status: true, timestamp: new Date().toISOStri
 // 404 handler
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
-// ✅ FIX: Start server with WebSocket support
 Bun.serve({
   port: process.env.PORT || 3000,
   fetch: app.fetch,
