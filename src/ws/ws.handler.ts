@@ -12,7 +12,7 @@ import {
 import { randomUUIDv7 } from "bun";
 import { UserRepository } from "../modules/user/user.repo";
 import { JWT_SECRET } from "../config";
-import { ConversationRepository } from "../conversation/conversation.repo";
+import { ConversationRepository } from "../modules/conversation/conversation.repo";
 
 const clients = new Map<string, WSContext>();
 
