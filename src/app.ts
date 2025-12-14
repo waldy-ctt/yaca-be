@@ -51,7 +51,7 @@ Bun.serve({
   fetch: app.fetch,
   // ✅ Add WebSocket handler configuration
   websocket: {
-    message() {}, // Will be handled by Hono's upgradeWebSocket
+    message() {}, 
     open() {},
     close() {},
   },
